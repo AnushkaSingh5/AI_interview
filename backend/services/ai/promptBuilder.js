@@ -37,29 +37,22 @@ exports.buildQuestionPrompt = (user, resumeData, session) => {
   let splitExplanation = '';
   if (interviewType === 'Mixed') {
     const techCount = Math.ceil(questionCount * 0.5);
-    const hrCount = Math.ceil(questionCount * 0.2);
-    const behavioralCount = Math.ceil(questionCount * 0.2);
-    const projectCount = questionCount - (techCount + hrCount + behavioralCount);
-    splitExplanation = `Provide exactly ${questionCount} questions with this approximate distribution:
+    const hrCount = Math.ceil(questionCount * 0.3);
+    const projectCount = questionCount - (techCount + hrCount);
+    splitExplanation = `Provide exactly ${questionCount} questions with this distribution:
     - ${techCount} Technical questions
-    - ${hrCount} HR questions
-    - ${behavioralCount} Behavioral questions
-    - ${projectCount > 0 ? projectCount : 0} Project-based questions (specifically referencing candidate's projects: ${resumeData?.projects?.map(p=>p.title).join(', ') || 'N/A'})`;
+    - ${hrCount} Behavioral/HR/personality questions
+    - ${projectCount > 0 ? projectCount : 0} Project-based questions (referencing candidate's projects: ${resumeData?.projects?.map(p=>p.title).join(', ') || 'N/A'})`;
   } else if (interviewType === 'Technical') {
-    const techCount = Math.ceil(questionCount * 0.7);
-    const projectCount = Math.ceil(questionCount * 0.2);
-    const behavioralCount = questionCount - (techCount + projectCount);
-    splitExplanation = `Provide exactly ${questionCount} questions with this approximate distribution:
-    - ${techCount} Technical questions
-    - ${projectCount} Project-based questions (specifically referencing candidate's projects: ${resumeData?.projects?.map(p=>p.title).join(', ') || 'N/A'})
-    - ${behavioralCount > 0 ? behavioralCount : 0} Behavioral/Logic questions`;
+    const techCount = Math.ceil(questionCount * 0.8);
+    const projectCount = questionCount - techCount;
+    splitExplanation = `Provide exactly ${questionCount} questions. All questions must be strictly technical or project-oriented. Under no circumstances should behavioral, HR, or situational fit questions be included. Distribution:
+    - ${techCount} Technical questions (focusing on code, language internals, and data structures)
+    - ${projectCount > 0 ? projectCount : 0} Project-based questions (referencing candidate's projects: ${resumeData?.projects?.map(p=>p.title).join(', ') || 'N/A'})`;
   } else {
     // HR Interview
-    const hrCount = Math.ceil(questionCount * 0.6);
-    const behavioralCount = questionCount - hrCount;
-    splitExplanation = `Provide exactly ${questionCount} questions with this approximate distribution:
-    - ${hrCount} Behavioral/HR questions
-    - ${behavioralCount} Situational/Leadership questions`;
+    splitExplanation = `Provide exactly ${questionCount} questions. All questions must be strictly behavioral, personality, situational, or leadership-oriented. Under no circumstances should coding, syntax, or backend/frontend technical queries be included. Distribution:
+    - ${questionCount} Behavioral/HR questions`;
   }
 
   // 4. Construct final prompt string
