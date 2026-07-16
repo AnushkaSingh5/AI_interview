@@ -47,10 +47,10 @@ const Sidebar = () => {
             </NavLink>
           </li>
           <li>
-            <a href="#mock" onClick={(e) => handleLockedItem(e, 'Mock Interviews')} className="sidebar-item-link">
+            <NavLink to="/mock-interviews" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiMic />
               <span>Mock Interviews</span>
-            </a>
+            </NavLink>
           </li>
           <li>
             <a href="#questions" onClick={(e) => handleLockedItem(e, 'Practice Questions')} className="sidebar-item-link">

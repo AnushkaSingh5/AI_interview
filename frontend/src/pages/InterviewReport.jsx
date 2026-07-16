@@ -221,7 +221,7 @@ const InterviewReport = () => {
   ];
 
   const barData = questions.map((q) => {
-    const matchedEval = qEvals.find(e => e.questionId === q._id);
+    const matchedEval = qEvals.find(e => e.questionId?.toString() === q._id?.toString());
     return {
       name: `Q${q.questionNumber}`,
       Score: (matchedEval?.score || 0) * 10

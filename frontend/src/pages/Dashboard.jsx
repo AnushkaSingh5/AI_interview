@@ -492,10 +492,12 @@ const Dashboard = () => {
                     statusLabel = 'Submitted';
                     statusBadge = 'bg-info text-info bg-opacity-10';
                     actionText = 'Awaiting Evaluation';
+                    actionUrl = `/interview/${item.interviewId}/report`;
                   } else if (item.status === 'Completed') {
                     statusLabel = 'Graded';
                     statusBadge = 'bg-success text-white px-2 py-0.5';
                     actionText = 'View Results';
+                    actionUrl = `/interview/${item.interviewId}/report`;
                   }
 
                   const isGraded = item.status === 'Completed';
@@ -515,12 +517,20 @@ const Dashboard = () => {
                       </div>
                       <div>
                         {isSubmitted ? (
-                          <button disabled className="btn btn-sm btn-white-custom py-1.5 px-3 opacity-75 cursor-not-allowed" style={{ fontSize: '0.76rem', cursor: 'not-allowed' }}>
-                            Awaiting Evaluation
+                          <button 
+                            onClick={() => navigate(actionUrl)} 
+                            className="btn btn-sm btn-info text-white py-1.5 px-3" 
+                            style={{ fontSize: '0.76rem' }}
+                          >
+                            View Status
                           </button>
                         ) : isGraded ? (
-                          <button disabled className="btn btn-sm btn-white-custom py-1.5 px-3 opacity-75 cursor-not-allowed" style={{ fontSize: '0.76rem', cursor: 'not-allowed' }}>
-                            Graded (Phase 6)
+                          <button 
+                            onClick={() => navigate(actionUrl)} 
+                            className="btn btn-sm btn-white-custom border py-1.5 px-3" 
+                            style={{ fontSize: '0.76rem' }}
+                          >
+                            View Results
                           </button>
                         ) : (
                           <button 

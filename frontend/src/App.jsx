@@ -19,6 +19,7 @@ import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Profile from './pages/Profile';
+import MockInterviews from './pages/MockInterviews';
 import NotFound from './pages/NotFound';
 import ResumeUpload from './pages/ResumeUpload';
 import ResumePreview from './pages/ResumePreview';
@@ -66,6 +67,7 @@ function App() {
               }
             >
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/mock-interviews" element={<MockInterviews />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/resume/upload" element={<ResumeUpload />} />
               <Route path="/resume/preview" element={<ResumePreview />} />
