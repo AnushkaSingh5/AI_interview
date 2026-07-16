@@ -6,7 +6,11 @@ const {
   getInterviewSession,
   updateInterviewSession,
   deleteInterviewSession,
-  getUserInterviews
+  getUserInterviews,
+  generateQuestions,
+  getQuestions,
+  regenerateQuestions,
+  deleteQuestions
 } = require('../controllers/interviewController');
 
 const router = express.Router();
@@ -80,5 +84,19 @@ router.put('/:id', updateInterviewSession);
 
 // @route   DELETE /api/interviews/:id
 router.delete('/:id', deleteInterviewSession);
+
+// --- AI Question Generation endpoints ---
+
+// @route   POST /api/interviews/:id/generate
+router.post('/:id/generate', generateQuestions);
+
+// @route   GET /api/interviews/:id/questions
+router.get('/:id/questions', getQuestions);
+
+// @route   POST /api/interviews/:id/regenerate
+router.post('/:id/regenerate', regenerateQuestions);
+
+// @route   DELETE /api/interviews/:id/questions
+router.delete('/:id/questions', deleteQuestions);
 
 module.exports = router;

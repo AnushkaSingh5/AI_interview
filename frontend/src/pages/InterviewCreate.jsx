@@ -162,7 +162,7 @@ const InterviewCreate = () => {
   const handleCreateInterview = async () => {
     setCreating(true);
     try {
-      const response = await axiosInstance.post('/api/interviews/create', formData);
+      const response = await axiosInstance.post('/interviews/create', formData);
       if (response.data && response.data.success) {
         toast.success('Interview session configured and created!');
         setCreatedSession(response.data.session);
@@ -238,11 +238,10 @@ const InterviewCreate = () => {
 
           <div className="d-flex flex-column gap-2">
             <button 
-              disabled 
-              className="btn btn-primary-purple w-100 py-2.5 opacity-50 cursor-not-allowed"
-              style={{ cursor: 'not-allowed' }}
+              onClick={() => navigate(`/interview/${createdSession.interviewId}/questions`)} 
+              className="btn btn-primary-purple w-100 py-2.5 d-flex align-items-center justify-content-center gap-1.5"
             >
-              Generate Questions (Phase 4 Locked)
+              Generate Questions
             </button>
             <button 
               onClick={() => navigate('/dashboard')} 

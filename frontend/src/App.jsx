@@ -24,6 +24,7 @@ import ResumeUpload from './pages/ResumeUpload';
 import ResumePreview from './pages/ResumePreview';
 import ExtractedDataEditor from './pages/ExtractedDataEditor';
 import InterviewCreate from './pages/InterviewCreate';
+import InterviewQuestionsReview from './pages/InterviewQuestionsReview';
 
 function App() {
   return (
@@ -68,6 +69,7 @@ function App() {
               <Route path="/resume/preview" element={<ResumePreview />} />
               <Route path="/resume/data" element={<ExtractedDataEditor />} />
               <Route path="/interview/create" element={<InterviewCreate />} />
+              <Route path="/interview/:id/questions" element={<InterviewQuestionsReview />} />
             </Route>
           </Route>
 

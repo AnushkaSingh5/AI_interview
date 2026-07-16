@@ -6,6 +6,11 @@ const InterviewQuestionSchema = new mongoose.Schema({
     ref: 'InterviewSession',
     required: true
   },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
   questionNumber: {
     type: Number,
     required: true
@@ -13,11 +18,28 @@ const InterviewQuestionSchema = new mongoose.Schema({
   questionType: {
     type: String,
     required: true,
-    enum: ['technical', 'behavioral']
+    enum: ['technical', 'behavioral', 'hr', 'project']
+  },
+  topic: {
+    type: String,
+    required: true
+  },
+  difficulty: {
+    type: String,
+    required: true,
+    enum: ['Easy', 'Medium', 'Hard', 'Adaptive']
   },
   question: {
     type: String,
     required: true
+  },
+  expectedAnswer: {
+    type: String,
+    required: true
+  },
+  hints: {
+    type: [String],
+    default: []
   },
   answer: {
     type: String,
