@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const mongoose = require('mongoose');
 const InterviewSession = require('../models/InterviewSession');
 const InterviewQuestion = require('../models/InterviewQuestion');
+const InterviewAnswer = require('../models/InterviewAnswer');
 const ResumeData = require('../models/ResumeData');
 const User = require('../models/User');
 const { calculateCompletionScore } = require('./profileController');
@@ -134,8 +135,10 @@ exports.updateInterviewSession = async (req, res, next) => {
       'preferredLanguage',
       'focusAreas',
       'status',
+      'currentQuestion',
       'startedAt',
-      'completedAt'
+      'submittedAt',
+      'timeRemaining'
     ];
 
     fieldsToUpdate.forEach(field => {
@@ -177,8 +180,9 @@ exports.deleteInterviewSession = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Delete associated questions first
+    // Delete associated questions and answers
     await InterviewQuestion.deleteMany({ sessionId: session._id });
+    await InterviewAnswer.deleteMany({ sessionId: session._id });
 
     await session.deleteOne();
 
@@ -254,16 +258,22 @@ exports.generateQuestions = async (req, res, next) => {
 
     await InterviewQuestion.insertMany(questionDocs);
 
-    // Set status to Questions Ready / Ready To Start
+    // Set status to ReadyToStart / Ready
     session.status = 'ReadyToStart';
     await session.save();
+
+    // Strip expectedAnswer and hints from generated response to prevent inspection cheating
+    const sanitizedQuestions = questionDocs.map(q => {
+      const { expectedAnswer, hints, ...rest } = q;
+      return rest;
+    });
 
     res.status(200).json({
       success: true,
       message: 'Questions generated and stored successfully',
       session,
-      count: questionDocs.length,
-      questions: questionDocs
+      count: sanitizedQuestions.length,
+      questions: sanitizedQuestions
     });
   } catch (error) {
     // Revert status on failure
@@ -293,8 +303,15 @@ exports.getQuestions = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    const questions = await InterviewQuestion.find({ sessionId: session._id })
-      .sort({ questionNumber: 1 });
+    const isSubmitted = ['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(session.status);
+    const query = InterviewQuestion.find({ sessionId: session._id });
+    
+    // Hide grading key information before candidate finishes
+    if (!isSubmitted) {
+      query.select('-expectedAnswer -hints');
+    }
+
+    const questions = await query.sort({ questionNumber: 1 });
 
     res.status(200).json({
       success: true,
@@ -337,6 +354,253 @@ exports.deleteQuestions = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: 'Questions deleted successfully, session reset to Created status',
+      session
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// --- PHASE 5 Mock Interview Session Core Endpoints ---
+
+// @desc    Start mock interview session
+// @route   POST /api/interviews/:id/start
+// @access  Private
+exports.startInterview = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Do not allow starting an already submitted or completed session
+    if (['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(session.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'This interview has already been submitted and cannot be started.'
+      });
+    }
+
+    // Set active values if starting for the first time
+    if (session.status !== 'InProgress') {
+      session.status = 'InProgress';
+      session.startedAt = new Date();
+      session.totalQuestions = session.questionCount;
+      session.timeRemaining = session.duration * 60; // Convert to seconds
+      await session.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Interview session started',
+      session
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Save or update draft answer response for a question
+// @route   POST /api/interviews/:id/answer
+// @access  Private
+exports.saveAnswer = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    if (session.status !== 'InProgress') {
+      return res.status(400).json({
+        success: false,
+        message: 'Answers can only be saved for an active session in progress.'
+      });
+    }
+
+    const { questionId, answer, timeTaken, skipped, currentQuestionIndex } = req.body;
+
+    if (!questionId) {
+      return res.status(400).json({ success: false, message: 'Question ID is required.' });
+    }
+
+    // Find if answer already exists
+    let answerDoc = await InterviewAnswer.findOne({
+      sessionId: session._id,
+      questionId
+    });
+
+    if (answerDoc) {
+      // Update existing draft
+      answerDoc.answer = answer !== undefined ? answer : answerDoc.answer;
+      answerDoc.timeTaken = timeTaken !== undefined ? timeTaken : answerDoc.timeTaken;
+      answerDoc.skipped = skipped !== undefined ? skipped : answerDoc.skipped;
+      await answerDoc.save();
+    } else {
+      // Create new draft
+      answerDoc = await InterviewAnswer.create({
+        sessionId: session._id,
+        questionId,
+        user: req.user._id,
+        answer: answer || '',
+        timeTaken: timeTaken || 0,
+        skipped: !!skipped
+      });
+    }
+
+    // Recalculate answeredQuestions count (exclude skipped or empty answers)
+    const allAnswers = await InterviewAnswer.find({ sessionId: session._id });
+    const answeredCount = allAnswers.filter(a => !a.skipped && a.answer?.trim().length > 0).length;
+
+    session.answeredQuestions = answeredCount;
+    session.progress = Math.round((answeredCount / session.totalQuestions) * 100);
+    
+    if (req.body.timeRemaining !== undefined) {
+      session.timeRemaining = req.body.timeRemaining;
+    }
+    if (currentQuestionIndex !== undefined) {
+      session.currentQuestion = currentQuestionIndex;
+    }
+
+    await session.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Answer saved successfully',
+      answer: answerDoc,
+      session
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all draft answers for an interview session
+// @route   GET /api/interviews/:id/answers
+// @access  Private
+exports.getAnswers = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const answers = await InterviewAnswer.find({ sessionId: session._id });
+
+    res.status(200).json({
+      success: true,
+      count: answers.length,
+      answers
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Resume active interview session lookup (restores state)
+// @route   GET /api/interviews/:id/resume
+// @access  Private
+exports.resumeInterview = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Block resuming already submitted/completed sessions
+    if (['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(session.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'This interview has already been submitted and cannot be resumed.'
+      });
+    }
+
+    // Ensure session is set to InProgress
+    if (session.status !== 'InProgress') {
+      session.status = 'InProgress';
+      session.startedAt = session.startedAt || new Date();
+      session.totalQuestions = session.questionCount;
+      session.timeRemaining = session.timeRemaining || session.duration * 60;
+      await session.save();
+    }
+
+    const isSubmitted = ['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(session.status);
+    const query = InterviewQuestion.find({ sessionId: session._id });
+    
+    // Hide grading key information in resume before submission
+    if (!isSubmitted) {
+      query.select('-expectedAnswer -hints');
+    }
+
+    const questions = await query.sort({ questionNumber: 1 });
+    const answers = await InterviewAnswer.find({ sessionId: session._id });
+
+    res.status(200).json({
+      success: true,
+      session,
+      questions,
+      answers
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Submit mock interview session
+// @route   POST /api/interviews/:id/submit
+// @access  Private
+exports.submitInterview = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    if (['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(session.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'This session has already been submitted.'
+      });
+    }
+
+    session.status = 'AwaitingEvaluation';
+    session.submittedAt = new Date();
+    session.timeRemaining = 0;
+    await session.save();
+
+    // Update all question statuses to answered
+    await InterviewQuestion.updateMany(
+      { sessionId: session._id },
+      { $set: { status: 'answered' } }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Interview session submitted successfully.',
       session
     });
   } catch (error) {

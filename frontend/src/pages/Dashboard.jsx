@@ -17,6 +17,7 @@ const Dashboard = () => {
   const [resumeData, setResumeData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [reparsing, setReparsing] = useState(false);
+  const [interviews, setInterviews] = useState([]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -42,6 +43,11 @@ const Dashboard = () => {
         setResumeData(dataRes.data.resumeData);
       } else {
         setResumeData(null);
+      }
+
+      const intRes = await axiosInstance.get('/interviews/user');
+      if (intRes.data && intRes.data.success) {
+        setInterviews(intRes.data.sessions || []);
       }
     } catch (error) {
       console.error('Error fetching dashboard details:', error);
@@ -456,9 +462,81 @@ const Dashboard = () => {
               <h3 className="h6 fw-bold mb-0 text-dark">Recent Interviews</h3>
             </div>
             
-            <div className="py-5 text-center text-muted small">
-              No interview rounds completed yet.
-            </div>
+            {interviews.length === 0 ? (
+              <div className="py-5 text-center text-muted small">
+                No mock interviews configured yet.
+              </div>
+            ) : (
+              <div className="d-flex flex-column gap-3 mt-2 overflow-y-auto" style={{ maxHeight: '280px' }}>
+                {interviews.slice(0, 5).map((item, idx) => {
+                  let statusLabel = 'Ready';
+                  let statusBadge = 'bg-success text-success bg-opacity-10';
+                  let actionText = 'Start Interview';
+                  let actionUrl = `/interview/${item.interviewId}/active`;
+
+                  if (item.status === 'Created') {
+                    statusLabel = 'Created';
+                    statusBadge = 'bg-secondary text-secondary bg-opacity-10';
+                    actionText = 'Setup Questions';
+                    actionUrl = `/interview/${item.interviewId}/questions`;
+                  } else if (item.status === 'Generating') {
+                    statusLabel = 'Generating...';
+                    statusBadge = 'bg-warning text-warning bg-opacity-10';
+                    actionText = 'Generating...';
+                    actionUrl = `/interview/${item.interviewId}/questions`;
+                  } else if (item.status === 'InProgress') {
+                    statusLabel = 'In Progress';
+                    statusBadge = 'bg-primary text-primary bg-opacity-10';
+                    actionText = 'Resume';
+                  } else if (['Submitted', 'AwaitingEvaluation'].includes(item.status)) {
+                    statusLabel = 'Submitted';
+                    statusBadge = 'bg-info text-info bg-opacity-10';
+                    actionText = 'Awaiting Evaluation';
+                  } else if (item.status === 'Completed') {
+                    statusLabel = 'Graded';
+                    statusBadge = 'bg-success text-white px-2 py-0.5';
+                    actionText = 'View Results';
+                  }
+
+                  const isGraded = item.status === 'Completed';
+                  const isSubmitted = ['Submitted', 'AwaitingEvaluation'].includes(item.status);
+
+                  return (
+                    <div key={idx} className="border rounded-3 p-3 bg-light bg-opacity-25 d-flex justify-content-between align-items-center">
+                      <div className="text-start">
+                        <strong className="text-dark d-block mb-1" style={{ fontSize: '0.86rem' }}>
+                          {item.role}
+                        </strong>
+                        <div className="d-flex flex-wrap gap-1.5" style={{ fontSize: '0.74rem' }}>
+                          <span className="badge bg-secondary bg-opacity-10 text-secondary">{item.difficulty}</span>
+                          <span className="text-muted">| {item.questionCount} Questions</span>
+                          <span className={`badge ${statusBadge}`} style={{ fontSize: '0.7rem' }}>{statusLabel}</span>
+                        </div>
+                      </div>
+                      <div>
+                        {isSubmitted ? (
+                          <button disabled className="btn btn-sm btn-white-custom py-1.5 px-3 opacity-75 cursor-not-allowed" style={{ fontSize: '0.76rem', cursor: 'not-allowed' }}>
+                            Awaiting Evaluation
+                          </button>
+                        ) : isGraded ? (
+                          <button disabled className="btn btn-sm btn-white-custom py-1.5 px-3 opacity-75 cursor-not-allowed" style={{ fontSize: '0.76rem', cursor: 'not-allowed' }}>
+                            Graded (Phase 6)
+                          </button>
+                        ) : (
+                          <button 
+                            onClick={() => navigate(actionUrl)} 
+                            className={`btn btn-sm py-1.5 px-3 ${item.status === 'InProgress' ? 'btn-success text-white' : 'btn-primary-purple'}`} 
+                            style={{ fontSize: '0.76rem' }}
+                          >
+                            {actionText}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
