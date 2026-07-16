@@ -148,8 +148,8 @@ ${trimmedText}
 
   // 3. Request execution with exponential backoff retry loop (Steps 5 & 6)
   let attempts = 0;
-  const maxAttempts = 4; // 1 original + 3 retries
-  let backoffDelay = 1000; // start with 1 second delay
+  const maxAttempts = 1; // Fails immediately and falls back to local template questions
+  let backoffDelay = 1000;
   let response;
   let duration = 0;
 

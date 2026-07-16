@@ -107,7 +107,7 @@ JSON Schema Output:
     if (options.forceLocal) {
       throw new Error('Short-circuiting due to Gemini rate limits');
     }
-    return await executeWithRetry(requestFn, 4, [2000, 5000, 10000, 20000], isRetryableError);
+    return await executeWithRetry(requestFn, 1, [], isRetryableError);
   } catch (err) {
     console.error(`[AI Evaluator] Failed to evaluate answer. Falling back to local scoring: ${err.message}`);
     // Safe mock fallback parameters if Gemini fails
@@ -250,7 +250,7 @@ JSON Schema Output:
   };
 
   try {
-    return await executeWithRetry(requestFn, 4, [2000, 5000, 10000, 20000], isRetryableError);
+    return await executeWithRetry(requestFn, 1, [], isRetryableError);
   } catch (err) {
     console.error(`[AI Evaluator] Failed to compile overall report. Falling back to local computations: ${err.message}`);
     
