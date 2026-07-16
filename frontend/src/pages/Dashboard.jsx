@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
   FiPlay, FiChevronDown, FiCalendar, FiUser, FiUploadCloud, 
-  FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink
+  FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink,
+  FiBookOpen, FiClock, FiGrid
 } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const { setUser, user: authUser } = useAuth();
   const [profile, setProfile] = useState(null);
   const [resumeMeta, setResumeMeta] = useState(null);
@@ -65,14 +67,6 @@ const Dashboard = () => {
     }
   };
 
-  const handleStartInterview = () => {
-    if (completion < 100) {
-      toast.warning('Please complete your profile to 100% to unlock AI Mock Interviews.');
-      return;
-    }
-    toast.info('Interview session launcher is locked for Phase 1/2 testing.');
-  };
-
   // Completion calculation checklist checks
   const isPersonalDone = !!(profile?.fullName || profile?.name);
   const isContactDone = !!(profile?.phone && profile?.phone.trim().length > 0);
@@ -113,6 +107,17 @@ const Dashboard = () => {
   if (isProjectsDone) completedCount++;
 
   const completion = Math.round((completedCount / 12) * 100);
+  
+  // Eligible ONLY if 100% completion AND resume uploaded
+  const isEligibleForInterview = completion === 100 && isResumeDone;
+
+  const handleStartInterview = () => {
+    if (!isEligibleForInterview) {
+      toast.warning('Complete your profile and upload your resume to start interviews.');
+      return;
+    }
+    navigate('/interview/create');
+  };
 
   const stats = [
     { value: '0', label: 'Mock Interviews Completed' },
@@ -143,11 +148,11 @@ const Dashboard = () => {
         <div>
           <button 
             onClick={handleStartInterview} 
-            disabled={completion < 100}
-            className={`btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm ${completion < 100 ? 'opacity-50' : ''}`}
-            style={{ cursor: completion < 100 ? 'not-allowed' : 'pointer' }}
+            disabled={!isEligibleForInterview}
+            className={`btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm ${!isEligibleForInterview ? 'opacity-50' : ''}`}
+            style={{ cursor: !isEligibleForInterview ? 'not-allowed' : 'pointer' }}
           >
-            <FiPlay style={{ fill: completion < 100 ? 'transparent' : 'white' }} />
+            <FiPlay style={{ fill: !isEligibleForInterview ? 'transparent' : 'white' }} />
             <span>Start Mock Interview</span>
           </button>
         </div>
@@ -240,7 +245,7 @@ const Dashboard = () => {
             </div>
 
             <div className="mt-3 pt-3 border-top">
-              {completion === 100 ? (
+              {isEligibleForInterview ? (
                 <div className="d-flex align-items-center gap-2">
                   <span className="badge bg-success bg-opacity-10 text-success fw-bold px-2 py-1" style={{ fontSize: '0.74rem' }}>
                     Interview Ready
@@ -249,7 +254,7 @@ const Dashboard = () => {
                 </div>
               ) : (
                 <p className="text-danger small mb-0 fw-semibold">
-                  ⚠️ Complete your profile to unlock AI Mock Interviews.
+                  ⚠️ Complete your profile before starting interviews.
                 </p>
               )}
             </div>
@@ -352,6 +357,82 @@ const Dashboard = () => {
           </div>
           
         </div>
+      </div>
+
+      {/* Feature Grid Columns (Mock Interview, History, Analytics, Practice) */}
+      <h3 className="h5 fw-bold text-dark mb-4 text-start">Platform Features</h3>
+      <div className="row g-4 mb-5">
+        
+        {/* Card 1: Start Mock Interview */}
+        <div className="col-md-6 col-xl-3 text-start">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)' }}>
+            <div>
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <span className="badge bg-primary bg-opacity-10 text-primary fw-bold" style={{ backgroundColor: 'var(--primary-purple-light)', color: 'var(--primary-purple)' }}>Active</span>
+                <FiPlay className="text-muted" />
+              </div>
+              <h3 className="h6 fw-bold mb-2 text-dark">Mock Interviews</h3>
+              <p className="text-muted small mb-4" style={{ lineHeight: '1.4' }}>Start a personalized, AI-driven interactive session tailored to your exact profile and target job role.</p>
+            </div>
+            <div>
+              {!isEligibleForInterview && (
+                <span className="text-danger d-block mb-2 fw-semibold" style={{ fontSize: '0.74rem' }}>
+                  ⚠️ Complete your profile before starting interviews.
+                </span>
+              )}
+              <button 
+                onClick={handleStartInterview} 
+                disabled={!isEligibleForInterview}
+                className="btn btn-sm btn-primary-purple w-100 py-2 d-flex align-items-center justify-content-center gap-1.5"
+              >
+                <FiPlay style={{ fill: 'white' }} /> Start Mock Interview
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Interview History (Coming Soon) */}
+        <div className="col-md-6 col-xl-3 text-start opacity-75">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)', filter: 'grayscale(30%)' }}>
+            <div>
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold">Coming Soon</span>
+                <FiClock className="text-muted" />
+              </div>
+              <h3 className="h6 fw-bold mb-2 text-dark">Interview History</h3>
+              <p className="text-muted small mb-0" style={{ lineHeight: '1.4' }}>Browse through your previous AI interview transcripts, answers, and detailed grading sheets.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 3: Analytics (Coming Soon) */}
+        <div className="col-md-6 col-xl-3 text-start opacity-75">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)', filter: 'grayscale(30%)' }}>
+            <div>
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold">Coming Soon</span>
+                <FiActivity className="text-muted" />
+              </div>
+              <h3 className="h6 fw-bold mb-2 text-dark">Analytics</h3>
+              <p className="text-muted small mb-0" style={{ lineHeight: '1.4' }}>Track your performance metrics, conceptual strengths, weak topics, and progress charts over time.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 4: Practice Questions (Coming Soon) */}
+        <div className="col-md-6 col-xl-3 text-start opacity-75">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)', filter: 'grayscale(30%)' }}>
+            <div>
+              <div className="d-flex align-items-center justify-content-between mb-3">
+                <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold">Coming Soon</span>
+                <FiBookOpen className="text-muted" />
+              </div>
+              <h3 className="h6 fw-bold mb-2 text-dark">Practice Questions</h3>
+              <p className="text-muted small mb-0" style={{ lineHeight: '1.4' }}>Tackle curated technical questions, behavioral scenarios, and coding challenges on demand.</p>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       {/* Stats Cards Row */}

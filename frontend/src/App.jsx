@@ -23,6 +23,7 @@ import NotFound from './pages/NotFound';
 import ResumeUpload from './pages/ResumeUpload';
 import ResumePreview from './pages/ResumePreview';
 import ExtractedDataEditor from './pages/ExtractedDataEditor';
+import InterviewCreate from './pages/InterviewCreate';
 
 function App() {
   return (
@@ -66,6 +67,7 @@ function App() {
               <Route path="/resume/upload" element={<ResumeUpload />} />
               <Route path="/resume/preview" element={<ResumePreview />} />
               <Route path="/resume/data" element={<ExtractedDataEditor />} />
+              <Route path="/interview/create" element={<InterviewCreate />} />
             </Route>
           </Route>
 

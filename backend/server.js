@@ -8,6 +8,7 @@ const authRoutes = require('./routes/authRoutes');
 const profileRoutes = require('./routes/profileRoutes');
 const resumeRoutes = require('./routes/resumeRoutes');
 const path = require('path');
+const interviewRoutes = require('./routes/interviewRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const { apiLimiter } = require('./middleware/rateLimiter');
 
@@ -61,6 +62,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users/profile', profileRoutes);
 app.use('/api/resume', resumeRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/interviews', interviewRoutes);
 app.use('/uploads', express.static(path.join(__dirname, './uploads')));
 
 // Centralized Error Handler Middleware (must be after routes)
