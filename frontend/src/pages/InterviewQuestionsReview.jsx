@@ -42,6 +42,61 @@ const InterviewQuestionsReview = () => {
     return () => clearInterval(interval);
   }, [generating]);
 
+  const [pollTrigger, setPollTrigger] = useState(0);
+  const [serverError, setServerError] = useState(false);
+
+  // Polling effect for background question generation (polls status endpoint only)
+  useEffect(() => {
+    let timer;
+    let isMounted = true;
+
+    if (session && session.status === 'Generating') {
+      setGenerating(true);
+      timer = setTimeout(async () => {
+        try {
+          const response = await axiosInstance.get(`/interviews/${id}/status`);
+          if (!isMounted) return;
+          setServerError(false);
+
+          if (response.data && response.data.success) {
+            const currentStatus = response.data.status;
+            if (currentStatus === 'ReadyToStart') {
+              // Generation completed, pull full details once
+              const fullDetailsRes = await axiosInstance.get(`/interviews/${id}`);
+              if (isMounted && fullDetailsRes.data && fullDetailsRes.data.success) {
+                setSession(fullDetailsRes.data.session);
+                setGenerating(false);
+                toast.success('AI Interview questions generated successfully!');
+              }
+            } else if (currentStatus !== 'Generating') {
+              // Generation failed or state changed
+              setGenerating(false);
+              const fullDetailsRes = await axiosInstance.get(`/interviews/${id}`);
+              if (isMounted && fullDetailsRes.data && fullDetailsRes.data.success) {
+                setSession(fullDetailsRes.data.session);
+              }
+            } else {
+              // Still generating, poll again
+              setPollTrigger(prev => prev + 1);
+            }
+          }
+        } catch (err) {
+          if (!isMounted) return;
+          console.error('Error polling session status:', err);
+          setServerError(true);
+          // Wait 5 seconds before retrying on connection failure to avoid flooding
+          timer = setTimeout(() => {
+            if (isMounted) setPollTrigger(prev => prev + 1);
+          }, 5000);
+        }
+      }, 3000);
+    }
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [session, id, pollTrigger]);
+
   const fetchSessionDetails = async () => {
     setLoading(true);
     try {
@@ -53,6 +108,8 @@ const InterviewQuestionsReview = () => {
         // If session status is 'Created', trigger generation immediately
         if (sess.status === 'Created') {
           await handleTriggerGeneration(sess._id);
+        } else if (sess.status === 'Generating') {
+          setGenerating(true);
         } else if (['InProgress', 'Submitted', 'AwaitingEvaluation', 'Completed'].includes(sess.status)) {
           // Redirect to active console if already in progress or complete
           navigate(`/interview/${sess.interviewId}/active`);
@@ -73,12 +130,10 @@ const InterviewQuestionsReview = () => {
       const response = await axiosInstance.post(`/interviews/${sessionId}/generate`);
       if (response.data && response.data.success) {
         setSession(response.data.session);
-        toast.success('AI Interview questions generated successfully!');
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'AI question generation failed.');
       navigate('/dashboard');
-    } finally {
       setGenerating(false);
     }
   };
@@ -171,6 +226,14 @@ const InterviewQuestionsReview = () => {
 
       <div className="glass-panel p-5 bg-white mx-auto shadow-sm" style={{ maxWidth: '720px', border: '1px solid var(--border-grey)' }}>
         
+        {serverError && (
+          <div className="alert alert-danger d-flex align-items-center gap-2 mb-4">
+            <FiAlertTriangle className="fs-5 text-danger flex-shrink-0" />
+            <div className="small text-start">
+              <strong>Server temporarily unavailable:</strong> We are having trouble connecting to the interview engine. Attempting to reconnect...
+            </div>
+          </div>
+        )}
         {/* Header Title */}
         <div className="text-center mb-4">
           <FiBookOpen className="text-primary display-4 mb-2" style={{ color: 'var(--primary-purple)' }} />
@@ -241,7 +304,7 @@ const InterviewQuestionsReview = () => {
           <button 
             type="button" 
             onClick={handleBeginInterview}
-            disabled={starting}
+            disabled={starting || generating}
             className="btn btn-primary-purple py-2.5 px-5 shadow-sm"
           >
             {starting ? 'Initializing...' : 'Begin Interview'}

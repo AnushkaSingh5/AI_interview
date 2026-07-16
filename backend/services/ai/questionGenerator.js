@@ -162,7 +162,7 @@ exports.generateInterviewQuestions = async (user, resumeData, session) => {
 
   try {
     // Execute AI request with retry wrapping
-    const questions = await executeWithRetry(requestFn, 3, 1000, isRetryableError);
+    const questions = await executeWithRetry(requestFn, 4, [2000, 5000, 10000, 20000], isRetryableError);
     console.log(`[AI Service] Questions successfully generated and validated by AI.`);
     return questions;
   } catch (err) {

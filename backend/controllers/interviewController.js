@@ -3,10 +3,13 @@ const mongoose = require('mongoose');
 const InterviewSession = require('../models/InterviewSession');
 const InterviewQuestion = require('../models/InterviewQuestion');
 const InterviewAnswer = require('../models/InterviewAnswer');
+const InterviewEvaluation = require('../models/InterviewEvaluation');
+const QuestionEvaluation = require('../models/QuestionEvaluation');
 const ResumeData = require('../models/ResumeData');
 const User = require('../models/User');
 const { calculateCompletionScore } = require('./profileController');
 const { generateInterviewQuestions } = require('../services/ai/questionGenerator');
+const { evaluateAnswer, compileOverallReport } = require('../services/ai/evaluator');
 
 // Safe helper to find session by ObjectId or custom interviewId without CastError
 const findSessionByIdOrCode = async (id) => {
@@ -228,55 +231,56 @@ exports.generateQuestions = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Update status to Generating
+    // Cache check: if status is already ReadyToStart, return cached result immediately
+    if (session.status === 'ReadyToStart') {
+      return res.status(200).json({
+        success: true,
+        message: 'Questions already generated (retrieved existing)',
+        session
+      });
+    }
+
+    if (session.status === 'Generating') {
+      const user = await User.findById(req.user._id);
+      const resumeData = await ResumeData.findOne({ user: req.user._id });
+      const { addToQueue } = require('../services/ai/aiQueueService');
+      addToQueue({
+        type: 'generate_questions',
+        sessionId: session._id,
+        user,
+        resumeData
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'AI Question Generation is already processing in the background.',
+        session
+      });
+    }
+
+    // Set status to Generating
     session.status = 'Generating';
     await session.save();
 
-    // Fetch user and resumeData contexts
+    // Fetch contexts
     const user = await User.findById(req.user._id);
     const resumeData = await ResumeData.findOne({ user: req.user._id });
 
-    // Generate questions
-    const generatedList = await generateInterviewQuestions(user, resumeData, session);
-
-    // Wipe existing questions
-    await InterviewQuestion.deleteMany({ sessionId: session._id });
-
-    // Map and insert questions
-    const questionDocs = generatedList.map(q => ({
+    // Queue the background generator job
+    const { addToQueue } = require('../services/ai/aiQueueService');
+    addToQueue({
+      type: 'generate_questions',
       sessionId: session._id,
-      user: req.user._id,
-      questionNumber: q.questionNumber,
-      questionType: q.questionType,
-      topic: q.topic,
-      difficulty: q.difficulty,
-      question: q.question,
-      expectedAnswer: q.expectedAnswer,
-      hints: q.hints,
-      status: 'pending'
-    }));
-
-    await InterviewQuestion.insertMany(questionDocs);
-
-    // Set status to ReadyToStart / Ready
-    session.status = 'ReadyToStart';
-    await session.save();
-
-    // Strip expectedAnswer and hints from generated response to prevent inspection cheating
-    const sanitizedQuestions = questionDocs.map(q => {
-      const { expectedAnswer, hints, ...rest } = q;
-      return rest;
+      user,
+      resumeData
     });
 
-    res.status(200).json({
+    res.status(202).json({
       success: true,
-      message: 'Questions generated and stored successfully',
-      session,
-      count: sanitizedQuestions.length,
-      questions: sanitizedQuestions
+      message: 'AI Question Generation has been queued in the background.',
+      session
     });
   } catch (error) {
-    // Revert status on failure
     try {
       const session = await findSessionByIdOrCode(req.params.id);
       if (session) {
@@ -420,10 +424,10 @@ exports.saveAnswer = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    if (session.status !== 'InProgress') {
+    if (['Completed', 'ReportReady'].includes(session.status)) {
       return res.status(400).json({
         success: false,
-        message: 'Answers can only be saved for an active session in progress.'
+        message: 'Answers cannot be modified for a completed interview.'
       });
     }
 
@@ -462,7 +466,8 @@ exports.saveAnswer = async (req, res, next) => {
     const answeredCount = allAnswers.filter(a => !a.skipped && a.answer?.trim().length > 0).length;
 
     session.answeredQuestions = answeredCount;
-    session.progress = Math.round((answeredCount / session.totalQuestions) * 100);
+    const totalQ = session.totalQuestions || session.questionCount || 5;
+    session.progress = Math.round((answeredCount / totalQ) * 100);
     
     if (req.body.timeRemaining !== undefined) {
       session.timeRemaining = req.body.timeRemaining;
@@ -603,6 +608,361 @@ exports.submitInterview = async (req, res, next) => {
       message: 'Interview session submitted successfully.',
       session
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Evaluate a submitted mock interview session
+// @route   POST /api/interviews/:id/evaluate
+// @access  Private
+exports.evaluateSession = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Check if session has already been evaluated
+    const existingEvaluation = await InterviewEvaluation.findOne({ sessionId: session._id });
+    if (existingEvaluation) {
+      session.status = 'Completed';
+      await session.save();
+      return res.status(200).json({
+        success: true,
+        message: 'Interview session evaluation completed (retrieved existing)',
+        session,
+        evaluation: existingEvaluation
+      });
+    }
+
+    if (['AwaitingEvaluation', 'Evaluating'].includes(session.status)) {
+      const { addToQueue } = require('../services/ai/aiQueueService');
+      addToQueue({
+        type: 'evaluate_session',
+        sessionId: session._id
+      });
+
+      return res.status(202).json({
+        success: true,
+        message: 'AI Evaluation is already processing in the background.',
+        session
+      });
+    }
+
+    // Set state to Evaluating
+    session.status = 'AwaitingEvaluation';
+    await session.save();
+
+    // Queue the background evaluator job
+    const { addToQueue } = require('../services/ai/aiQueueService');
+    addToQueue({
+      type: 'evaluate_session',
+      sessionId: session._id
+    });
+
+    res.status(202).json({
+      success: true,
+      message: 'AI Evaluation has been queued in the background.',
+      session
+    });
+  } catch (error) {
+    try {
+      const session = await findSessionByIdOrCode(req.params.id);
+      if (session) {
+        session.status = 'AwaitingEvaluation';
+        await session.save();
+      }
+    } catch (_) {}
+    next(error);
+  }
+};
+
+// @desc    Get status details of an interview session
+// @route   GET /api/interviews/:id/status
+// @access  Private
+exports.getStatus = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    res.status(200).json({
+      success: true,
+      status: session.status,
+      progress: session.progress || 0,
+      currentQuestion: session.currentQuestion || 0,
+      totalQuestions: session.totalQuestions || session.questionCount || 5
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get live queue status details for admin/debug
+// @route   GET /api/queue/status
+// @access  Private
+exports.getQueueStatus = async (req, res, next) => {
+  try {
+    const InterviewSession = require('../models/InterviewSession');
+    const pausedCount = await InterviewSession.countDocuments({ status: 'Paused' });
+    const { getQueueLength, getProcessingJob } = require('../services/ai/aiQueueService');
+
+    res.status(200).json({
+      success: true,
+      queueLength: getQueueLength ? getQueueLength() : 0,
+      processingJob: getProcessingJob ? getProcessingJob() : null,
+      pausedCount
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Manually resume a paused mock interview session
+// @route   POST /api/interviews/:id/resume-eval
+// @access  Private
+exports.resumeEvaluation = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Set status back to AwaitingEvaluation
+    session.status = 'AwaitingEvaluation';
+    await session.save();
+
+    // Queue the background evaluator job (high priority because it's manually triggered)
+    const { addToQueue } = require('../services/ai/aiQueueService');
+    addToQueue({
+      type: 'evaluate_session',
+      sessionId: session._id,
+      priority: 'high'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'AI Evaluation has been successfully resumed in the background.',
+      session
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get compiled interview report details
+// @route   GET /api/interviews/:id/report
+// @access  Private
+exports.getReport = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const evaluation = await InterviewEvaluation.findOne({ sessionId: session._id });
+    if (!evaluation) {
+      return res.status(202).json({
+        success: true,
+        status: 'processing',
+        message: 'AI evaluation is currently processing. Please poll again shortly.'
+      });
+    }
+
+    const questionEvaluations = await QuestionEvaluation.find({ sessionId: session._id });
+    const questions = await InterviewQuestion.find({ sessionId: session._id }).sort({ questionNumber: 1 });
+    const answers = await InterviewAnswer.find({ sessionId: session._id });
+
+    res.status(200).json({
+      success: true,
+      session,
+      evaluation,
+      questionEvaluations,
+      questions,
+      answers
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get feedback for each question in a session
+// @route   GET /api/interviews/:id/question-feedback
+// @access  Private
+exports.getQuestionFeedback = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const questionEvaluations = await QuestionEvaluation.find({ sessionId: session._id });
+
+    res.status(200).json({
+      success: true,
+      count: questionEvaluations.length,
+      questionEvaluations
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Download mock PDF report
+// @route   GET /api/interviews/:id/report/pdf
+// @access  Private
+exports.downloadReportPdf = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).send('Interview session not found');
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).send('Access denied');
+    }
+
+    const evaluation = await InterviewEvaluation.findOne({ sessionId: session._id });
+    if (!evaluation) {
+      return res.status(404).send('Evaluation report has not been compiled yet.');
+    }
+
+    const questionEvaluations = await QuestionEvaluation.find({ sessionId: session._id });
+    const questions = await InterviewQuestion.find({ sessionId: session._id }).sort({ questionNumber: 1 });
+    const answers = await InterviewAnswer.find({ sessionId: session._id });
+
+    // Render print-friendly HTML template that auto-prompts browser print window
+    let htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>InterviewAce AI Report - ${session.title}</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; padding: 40px; line-height: 1.6; }
+        .header { text-align: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; }
+        .title { font-size: 24px; font-weight: bold; color: #4f46e5; margin: 0; }
+        .meta-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 30px; }
+        .meta-item { font-size: 14px; }
+        .meta-label { color: #64748b; font-weight: 600; }
+        .score-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 30px; }
+        .score-val { font-size: 48px; font-weight: 800; color: #4f46e5; }
+        .section-title { font-size: 18px; font-weight: bold; color: #0f172a; border-left: 4px solid #4f46e5; padding-left: 10px; margin: 30px 0 15px 0; }
+        .bullet-list { margin: 0; padding-left: 20px; }
+        .bullet-list li { margin-bottom: 8px; }
+        .question-block { border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px; page-break-inside: avoid; }
+        .q-num { font-weight: bold; color: #4f46e5; }
+        .score-badge { display: inline-block; background: #ecfdf5; color: #065f46; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+        @media print {
+          body { padding: 0; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="no-print" style="margin-bottom: 20px; text-align: right;">
+        <button onclick="window.print()" style="background: #4f46e5; color: white; padding: 8px 16px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">
+          Print / Save PDF
+        </button>
+      </div>
+
+      <div class="header">
+        <div class="title">InterviewAce AI Evaluation Report</div>
+        <div style="font-size: 14px; color: #64748b; margin-top: 5px;">Generated on ${new Date(evaluation.createdAt).toLocaleDateString()}</div>
+      </div>
+
+      <div class="score-box">
+        <div style="font-size: 14px; font-weight: bold; color: #64748b; text-transform: uppercase;">Overall score</div>
+        <div class="score-val">${evaluation.overallScore}%</div>
+        <div style="font-weight: 600; color: #0f172a; margin-top: 5px;">
+          Performance: ${evaluation.overallScore >= 80 ? 'Excellent' : evaluation.overallScore >= 70 ? 'Very Good' : evaluation.overallScore >= 60 ? 'Satisfactory' : 'Needs Practice'}
+        </div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item"><span class="meta-label">Target Role:</span> ${session.role}</div>
+        <div class="meta-item"><span class="meta-label">Experience Level:</span> ${session.experienceLevel}</div>
+        <div class="meta-item"><span class="meta-label">Technical Score:</span> ${evaluation.technicalScore}%</div>
+        <div class="meta-item"><span class="meta-label">Communication Score:</span> ${evaluation.communicationScore}%</div>
+        <div class="meta-item"><span class="meta-label">HR/Behavioral Score:</span> ${evaluation.hrScore}%</div>
+        <div class="meta-item"><span class="meta-label">Confidence Score:</span> ${evaluation.confidenceScore}%</div>
+      </div>
+
+      <div class="section-title">Overall Feedback</div>
+      <p>${evaluation.overallFeedback}</p>
+
+      <div class="section-title">Key Strengths</div>
+      <ul class="bullet-list">
+        ${evaluation.strengths.map(s => `<li>${s}</li>`).join('')}
+      </ul>
+
+      <div class="section-title">Development Opportunities</div>
+      <ul class="bullet-list">
+        ${evaluation.weaknesses.map(w => `<li>${w}</li>`).join('')}
+      </ul>
+
+      <div class="section-title">Actionable Suggestions</div>
+      <ul class="bullet-list">
+        ${evaluation.recommendations.map(r => `<li>${r}</li>`).join('')}
+      </ul>
+
+      <div class="section-title">Detailed Question breakdown</div>
+      ${questions.map((q, idx) => {
+        const qEval = questionEvaluations.find(e => e.questionId.toString() === q._id.toString());
+        const ans = answers.find(a => a.questionId.toString() === q._id.toString());
+        const missingPointsHtml = (qEval && qEval.missingPoints?.length > 0)
+          ? `<div style="font-size: 12px; margin-top: 8px; color: #991b1b;"><strong style="color: #475569;">Missing Concepts:</strong> ${qEval.missingPoints.join(', ')}</div>`
+          : '';
+        
+        return `
+        <div class="question-block">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span class="q-num">Question ${q.questionNumber} (${q.topic})</span>
+            <span class="score-badge">Score: ${qEval ? qEval.score : 0}/10</span>
+          </div>
+          <div style="font-weight: 600; margin-bottom: 10px;">${q.question}</div>
+          <div style="font-size: 13px; margin-bottom: 8px;"><strong style="color: #475569;">Candidate Response:</strong> "${ans ? ans.answer : '[No answer provided]'}"</div>
+          <div style="font-size: 13px; margin-bottom: 8px;"><strong style="color: #475569;">AI Feedback:</strong> ${qEval ? qEval.feedback : 'N/A'}</div>
+          ${missingPointsHtml}
+        </div>
+        `;
+      }).join('')}
+
+      <script>
+        window.onload = function() {
+          setTimeout(function() {
+            window.print();
+          }, 800);
+        };
+      </script>
+    </body>
+    </html>
+    `;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.setHeader('Content-Disposition', `attachment; filename=InterviewAce_Report_\${session.interviewId}.html`);
+    res.send(htmlContent);
   } catch (error) {
     next(error);
   }

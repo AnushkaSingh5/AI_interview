@@ -1,10 +1,9 @@
 /**
- * Retry Handler utility with exponential backoff for network/service calls
+ * Retry Handler utility with custom backoff delays for network/service calls
  */
 
-exports.executeWithRetry = async (fn, maxAttempts = 3, initialDelayMs = 1000, retryableErrorPredicate = () => true) => {
+exports.executeWithRetry = async (fn, maxAttempts = 4, baseDelays = [2000, 5000, 10000, 20000], retryableErrorPredicate = () => true) => {
   let attempt = 0;
-  let delay = initialDelayMs;
 
   while (attempt < maxAttempts) {
     attempt++;
@@ -20,9 +19,9 @@ exports.executeWithRetry = async (fn, maxAttempts = 3, initialDelayMs = 1000, re
         throw error;
       }
 
-      console.log(`[Retry Handler] Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
-      delay *= 2; // Exponential backoff
+      const delayMs = baseDelays[attempt - 1] || 2000;
+      console.log(`[Retry Handler] Rate-limit (429/503) warning. Retrying in ${delayMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
     }
   }
 };

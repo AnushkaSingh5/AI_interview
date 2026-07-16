@@ -17,7 +17,10 @@ const aiService = require('./services/aiService');
 const aiRoutes = require('./routes/aiRoutes');
 
 // Connect to Database
-connectDB();
+connectDB().then(() => {
+  const { resumePendingJobs } = require('./services/ai/aiQueueService');
+  resumePendingJobs();
+});
 
 const app = express();
 

@@ -15,7 +15,14 @@ const {
   saveAnswer,
   getAnswers,
   resumeInterview,
-  submitInterview
+  submitInterview,
+  evaluateSession,
+  getStatus,
+  getQueueStatus,
+  resumeEvaluation,
+  getReport,
+  getQuestionFeedback,
+  downloadReportPdf
 } = require('../controllers/interviewController');
 
 const router = express.Router();
@@ -112,5 +119,28 @@ router.get('/:id/resume', resumeInterview);
 
 // @route   POST /api/interviews/:id/submit
 router.post('/:id/submit', submitInterview);
+
+// --- AI Evaluation & Reporting Endpoints ---
+
+// @route   GET /api/interviews/queue/status
+router.get('/queue/status', getQueueStatus);
+
+// @route   POST /api/interviews/:id/evaluate
+router.post('/:id/evaluate', evaluateSession);
+
+// @route   POST /api/interviews/:id/resume-eval
+router.post('/:id/resume-eval', resumeEvaluation);
+
+// @route   GET /api/interviews/:id/status
+router.get('/:id/status', getStatus);
+
+// @route   GET /api/interviews/:id/report
+router.get('/:id/report', getReport);
+
+// @route   GET /api/interviews/:id/question-feedback
+router.get('/:id/question-feedback', getQuestionFeedback);
+
+// @route   GET /api/interviews/:id/report/pdf
+router.get('/:id/report/pdf', downloadReportPdf);
 
 module.exports = router;

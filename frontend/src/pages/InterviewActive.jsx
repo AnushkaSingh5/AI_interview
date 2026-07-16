@@ -298,20 +298,19 @@ const InterviewActive = () => {
           </div>
 
           <div className="border rounded-3 p-4 mb-4 bg-light bg-opacity-50 text-center">
-            <FiAlertTriangle className="text-warning fs-3 mb-2" />
-            <h4 className="fw-bold h6 text-dark mb-1">Awaiting AI Evaluation (Phase 6)</h4>
+            <FiCheckCircle className="text-success fs-3 mb-2" />
+            <h4 className="fw-bold h6 text-dark mb-1">AI Evaluation Ready</h4>
             <p className="text-muted mb-0" style={{ fontSize: '0.78rem' }}>
-              Gemini model grading and feedback generation is locked during Phase 5. Results will unlock once evaluation models are integrated.
+              Your answers have been submitted. Click below to start the AI evaluation pipeline and generate your report.
             </p>
           </div>
 
           <div className="d-flex flex-column gap-2">
             <button 
-              disabled 
-              className="btn btn-primary-purple w-100 py-2.5 opacity-50 cursor-not-allowed"
-              style={{ cursor: 'not-allowed' }}
+              onClick={() => navigate(`/interview/${session.interviewId}/report`)}
+              className="btn btn-primary-purple w-100 py-2.5"
             >
-              View Evaluation Results (Phase 6 Locked)
+              View Evaluation & Report
             </button>
             <button 
               onClick={() => navigate('/dashboard')} 
