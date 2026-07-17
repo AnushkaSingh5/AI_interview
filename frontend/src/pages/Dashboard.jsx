@@ -6,6 +6,9 @@ import {
   FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink,
   FiBookOpen, FiClock, FiGrid
 } from 'react-icons/fi';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 
@@ -18,6 +21,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [reparsing, setReparsing] = useState(false);
   const [interviews, setInterviews] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [analytics, setAnalytics] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -48,6 +53,21 @@ const Dashboard = () => {
       const intRes = await axiosInstance.get('/interviews/user');
       if (intRes.data && intRes.data.success) {
         setInterviews(intRes.data.sessions || []);
+      }
+
+      // Fetch performance summary and analytics for the mini-chart widget
+      try {
+        const sumRes = await axiosInstance.get('/dashboard/summary');
+        if (sumRes.data.success) setSummary(sumRes.data.summary);
+      } catch (e) {
+        console.warn('Mini-summary fetch failed:', e.message);
+      }
+
+      try {
+        const analRes = await axiosInstance.get('/dashboard/analytics');
+        if (analRes.data.success) setAnalytics(analRes.data);
+      } catch (e) {
+        console.warn('Mini-analytics fetch failed:', e.message);
       }
     } catch (error) {
       console.error('Error fetching dashboard details:', error);
@@ -550,18 +570,52 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Right Column: Performance Chart / Upcoming features */}
+        {/* Right Column: Performance Mini-Widget */}
         <div className="col-lg-6">
-          <div className="glass-panel p-4 h-100 bg-white text-start" style={{ border: '1px solid var(--border-grey)' }}>
-            <div className="d-flex justify-content-between align-items-center mb-4">
-              <h3 className="h6 fw-bold mb-0 text-dark">Upcoming Features</h3>
+          <div className="glass-panel p-4 h-100 bg-white text-start d-flex flex-column justify-content-between shadow-sm" style={{ border: '1px solid var(--border-grey)' }}>
+            <div>
+              <div className="d-flex justify-content-between align-items-center mb-3">
+                <h3 className="h6 fw-bold mb-0 text-dark">Performance Score Trend</h3>
+                <Link to="/performance" className="text-decoration-none small fw-semibold text-primary d-flex align-items-center gap-1">
+                  View Full Analytics <FiExternalLink />
+                </Link>
+              </div>
+
+              {analytics?.trends?.length > 0 ? (
+                <div style={{ width: '100%', height: '180px' }} className="mb-3">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={analytics.trends.slice(-5).map((t, i) => ({ name: `Int ${i + 1}`, Score: t.overallScore }))}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" stroke="#64748b" fontSize={9} />
+                      <YAxis domain={[0, 100]} stroke="#64748b" fontSize={9} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="Score" stroke="var(--primary-purple)" strokeWidth={2} activeDot={{ r: 6 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="py-5 text-center text-muted small border border-dashed rounded-3 mb-3 bg-light bg-opacity-25">
+                  Complete your first mock interview to track score trends.
+                </div>
+              )}
             </div>
-            
-            <ul className="text-muted small mb-0 ps-3" style={{ lineHeight: '1.8' }}>
-              <li><strong>Phase 3</strong>: Interactive AI-driven chat panels customized to your resume experience.</li>
-              <li><strong>Phase 4</strong>: Live scoring analytics, core conceptual gap analysis, and training recommendations.</li>
-              <li><strong>Phase 5</strong>: Code compilations sandbox for live programming challenge simulation rounds.</li>
-            </ul>
+
+            <div className="border-top pt-3 mt-2">
+              <div className="row g-2 text-center">
+                <div className="col-4">
+                  <span className="text-muted small d-block" style={{ fontSize: '0.72rem' }}>Practice hours</span>
+                  <strong className="text-dark small">{summary?.hoursPracticed || 0} hrs</strong>
+                </div>
+                <div className="col-4">
+                  <span className="text-muted small d-block" style={{ fontSize: '0.72rem' }}>Current streak</span>
+                  <strong className="text-success small">{summary?.currentStreak || 0} Days</strong>
+                </div>
+                <div className="col-4">
+                  <span className="text-muted small d-block" style={{ fontSize: '0.72rem' }}>Average score</span>
+                  <strong className="text-primary small">{summary?.overallAverageScore || 0}%</strong>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

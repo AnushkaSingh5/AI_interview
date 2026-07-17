@@ -183,15 +183,17 @@ exports.deleteInterviewSession = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    // Delete associated questions and answers
+    // Delete associated questions, answers, and evaluations
     await InterviewQuestion.deleteMany({ sessionId: session._id });
     await InterviewAnswer.deleteMany({ sessionId: session._id });
+    await InterviewEvaluation.deleteMany({ sessionId: session._id });
+    await QuestionEvaluation.deleteMany({ sessionId: session._id });
 
     await session.deleteOne();
 
     res.status(200).json({
       success: true,
-      message: 'Interview session deleted successfully'
+      message: 'Interview session and evaluation reports deleted successfully'
     });
   } catch (error) {
     next(error);
@@ -963,6 +965,55 @@ exports.downloadReportPdf = async (req, res, next) => {
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Disposition', `attachment; filename=InterviewAce_Report_\${session.interviewId}.html`);
     res.send(htmlContent);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Retake an interview by cloning its configuration
+// @route   POST /api/interviews/:id/retake
+// @access  Private
+exports.retakeInterview = async (req, res, next) => {
+  try {
+    const originalSession = await findSessionByIdOrCode(req.params.id);
+
+    if (!originalSession) {
+      return res.status(404).json({ success: false, message: 'Original interview session not found' });
+    }
+
+    if (originalSession.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    // Generate unique code for the new interview session
+    const uniqueId = crypto.randomBytes(3).toString('hex').toUpperCase();
+    const newInterviewId = `INT-${uniqueId}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newSession = await InterviewSession.create({
+      user: req.user._id,
+      interviewId: newInterviewId,
+      title: `${originalSession.role} Retake`,
+      interviewType: originalSession.interviewType,
+      role: originalSession.role,
+      company: originalSession.company,
+      experienceLevel: originalSession.experienceLevel,
+      difficulty: originalSession.difficulty,
+      duration: originalSession.duration,
+      questionCount: originalSession.questionCount,
+      preferredLanguage: originalSession.preferredLanguage,
+      focusAreas: originalSession.focusAreas,
+      interviewMode: originalSession.interviewMode,
+      status: 'Created',
+      currentQuestion: 1,
+      answeredQuestions: 0,
+      progress: 0
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'New retake interview session initialized successfully',
+      session: newSession
+    });
   } catch (error) {
     next(error);
   }

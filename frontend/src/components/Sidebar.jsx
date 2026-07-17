@@ -59,10 +59,10 @@ const Sidebar = () => {
             </a>
           </li>
           <li>
-            <a href="#performance" onClick={(e) => handleLockedItem(e, 'My Performance')} className="sidebar-item-link">
+            <NavLink to="/performance" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiActivity />
               <span>My Performance</span>
-            </a>
+            </NavLink>
           </li>
         </ul>
 

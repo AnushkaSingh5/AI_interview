@@ -22,7 +22,8 @@ const {
   resumeEvaluation,
   getReport,
   getQuestionFeedback,
-  downloadReportPdf
+  downloadReportPdf,
+  retakeInterview
 } = require('../controllers/interviewController');
 
 const router = express.Router();
@@ -142,5 +143,8 @@ router.get('/:id/question-feedback', getQuestionFeedback);
 
 // @route   GET /api/interviews/:id/report/pdf
 router.get('/:id/report/pdf', downloadReportPdf);
+
+// @route   POST /api/interviews/:id/retake
+router.post('/:id/retake', protect, retakeInterview);
 
 module.exports = router;
