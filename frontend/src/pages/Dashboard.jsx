@@ -154,9 +154,33 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
+      <div className="container py-4 text-start">
+        {/* Title skeleton */}
+        <div className="mb-4">
+          <div className="skeleton-pulse mb-2" style={{ width: '160px', height: '32px' }} />
+          <div className="skeleton-pulse" style={{ width: '240px', height: '18px' }} />
+        </div>
+
+        {/* Checklist skeleton card */}
+        <div className="glass-panel p-4 mb-5 skeleton-pulse" style={{ height: '220px', border: '1px solid var(--border-grey)' }} />
+
+        {/* Stats card skeleton grid */}
+        <div className="row g-4 mb-5">
+          {[1, 2, 3, 4].map(i => (
+            <div className="col-sm-6 col-xl-3" key={i}>
+              <div className="glass-panel p-4 skeleton-pulse" style={{ height: '110px', border: '1px solid var(--border-grey)' }} />
+            </div>
+          ))}
+        </div>
+
+        {/* Grid split skeleton */}
+        <div className="row g-4">
+          <div className="col-lg-6">
+            <div className="glass-panel p-4 skeleton-pulse" style={{ height: '320px', border: '1px solid var(--border-grey)' }} />
+          </div>
+          <div className="col-lg-6">
+            <div className="glass-panel p-4 skeleton-pulse" style={{ height: '320px', border: '1px solid var(--border-grey)' }} />
+          </div>
         </div>
       </div>
     );
@@ -431,16 +455,23 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Card 3: Analytics (Coming Soon) */}
-        <div className="col-md-6 col-xl-3 text-start opacity-75">
-          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)', filter: 'grayscale(30%)' }}>
+        {/* Card 3: Analytics (Fully Active) */}
+        <div className="col-md-6 col-xl-3 text-start">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)' }}>
             <div>
               <div className="d-flex align-items-center justify-content-between mb-3">
-                <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold">Coming Soon</span>
-                <FiActivity className="text-muted" />
+                <span className="badge bg-success bg-opacity-10 text-success fw-semibold">Active</span>
+                <FiActivity className="text-primary" />
               </div>
-              <h3 className="h6 fw-bold mb-2 text-dark">Analytics</h3>
-              <p className="text-muted small mb-0" style={{ lineHeight: '1.4' }}>Track your performance metrics, conceptual strengths, weak topics, and progress charts over time.</p>
+              <h3 className="h6 fw-bold mb-2 text-dark">Analytics Dashboard</h3>
+              <p className="text-muted small mb-3" style={{ lineHeight: '1.4' }}>Track your performance metrics, conceptual strengths, weak topics, and progress charts over time.</p>
+              <button 
+                onClick={() => navigate('/performance')} 
+                className="btn btn-sm btn-primary-purple text-white py-1 px-3 mt-auto"
+                style={{ fontSize: '0.76rem' }}
+              >
+                Open Analytics
+              </button>
             </div>
           </div>
         </div>

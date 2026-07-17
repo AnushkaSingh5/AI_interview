@@ -222,7 +222,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Global Cards */
 .glass-panel {
-  background: #ffffff;
+  background: var(--bg-white);
   border: 1px solid var(--border-grey);
   border-radius: 12px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.02);
@@ -230,7 +230,7 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Stats Cards (Dashboard) */
 .stats-card {
-  background: #ffffff;
+  background: var(--bg-white);
   border: 1px solid var(--border-grey);
   border-radius: 12px;
   padding: 1.5rem;
@@ -1049,6 +1049,114 @@ h1, h2, h3, h4, h5, h6 {
   .hero-floater-card {
     display: none; /* Hide floaters on very small mobile screens for neat layout */
   }
+}
+
+/* --- Phase 7 Visual Polish Updates --- */
+
+/* 1. Dark Theme Overrides */
+body.dark-theme {
+  --bg-light: #0f172a;
+  --bg-white: #1e293b;
+  --text-dark: #f8fafc;
+  --text-muted: #94a3b8;
+  --border-grey: #334155;
+  --border-card: #475569;
+}
+
+body.dark-theme .glass-panel,
+body.dark-theme .stats-card,
+body.dark-theme .card,
+body.dark-theme .modal-content,
+body.dark-theme .table-light,
+body.dark-theme .table-light th,
+body.dark-theme .table-hover tbody tr:hover {
+  background-color: var(--bg-white) !important;
+  color: var(--text-dark) !important;
+  border-color: var(--border-grey) !important;
+}
+
+body.dark-theme .table {
+  color: var(--text-dark) !important;
+}
+
+body.dark-theme input,
+body.dark-theme select,
+body.dark-theme textarea {
+  background-color: #0f172a !important;
+  color: var(--text-dark) !important;
+  border-color: var(--border-grey) !important;
+}
+
+body.dark-theme .bg-light {
+  background-color: #0f172a !important;
+}
+
+body.dark-theme .text-dark,
+body.dark-theme h1,
+body.dark-theme h2,
+body.dark-theme h3,
+body.dark-theme h4,
+body.dark-theme h5,
+body.dark-theme h6,
+body.dark-theme strong,
+body.dark-theme th,
+body.dark-theme td {
+  color: var(--text-dark) !important;
+}
+
+body.dark-theme .text-muted {
+  color: var(--text-muted) !important;
+}
+
+body.dark-theme .top-header-bar-container {
+  background-color: var(--bg-white) !important;
+  border-bottom-color: var(--border-grey) !important;
+}
+
+body.dark-theme .header-username {
+  color: var(--text-dark) !important;
+}
+
+body.dark-theme .top-header-icons button:hover,
+body.dark-theme .top-header-icons div:hover {
+  background-color: #334155 !important;
+}
+
+/* 2. Responsive Layout Optimizations */
+@media (max-width: 991.98px) {
+  .dashboard-layout-container {
+    flex-direction: column;
+  }
+  .sidebar-container {
+    width: 100% !important;
+    padding: 1rem 0;
+  }
+  .sidebar-menu {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 1rem;
+  }
+  .sidebar-menu-section-header {
+    display: none;
+  }
+  .page-content-canvas {
+    padding: 1.5rem 1rem;
+  }
+}
+
+/* 3. Loading Skeletons CSS */
+.skeleton-pulse {
+  background: linear-gradient(90deg, var(--border-card) 25%, var(--bg-light) 50%, var(--border-card) 75%);
+  background-size: 200% 100%;
+  animation: pulse-loading 1.6s infinite;
+  border-radius: 4px;
+}
+
+@keyframes pulse-loading {
+  0% { background-position: 120% 0; }
+  100% { background-position: -20% 0; }
 }
 
 

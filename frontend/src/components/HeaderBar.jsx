@@ -1,10 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { FiBell, FiSearch, FiMenu } from 'react-icons/fi';
+import { FiBell, FiSearch, FiMenu, FiSun, FiMoon } from 'react-icons/fi';
 import defaultAvatar from '../assets/avatar.png';
 
 const HeaderBar = () => {
   const { user } = useAuth();
+  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
+
+  useEffect(() => {
+    if (theme === 'dark') {
+      document.body.classList.add('dark-theme');
+    } else {
+      document.body.classList.remove('dark-theme');
+    }
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
 
   return (
     <header className="top-header-bar-container">
@@ -31,6 +45,16 @@ const HeaderBar = () => {
 
       {/* Right side: Notification and user avatar with details */}
       <div className="top-header-icons">
+        {/* Dark Mode Toggle */}
+        <button 
+          onClick={toggleTheme}
+          className="header-icon-btn d-flex align-items-center justify-content-center p-2 rounded-circle hover-bg-light"
+          style={{ width: '38px', height: '38px', border: 'none', background: 'transparent' }}
+          title={theme === 'dark' ? "Switch to Light Mode" : "Switch to Dark Mode"}
+        >
+          {theme === 'dark' ? <FiSun style={{ color: '#fbbf24', fontSize: '1.2rem' }} /> : <FiMoon style={{ color: '#4b5563', fontSize: '1.2rem' }} />}
+        </button>
+
         {/* Notification Bell with red count badge 3 */}
         <button 
           className="header-icon-btn d-flex align-items-center justify-content-center p-2 rounded-circle hover-bg-light"

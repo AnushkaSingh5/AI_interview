@@ -58,9 +58,35 @@ const PerformanceDashboard = () => {
 
   if (loading) {
     return (
-      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '80vh' }}>
-        <div className="spinner-border text-primary" role="status" style={{ color: 'var(--primary-purple)' }}>
-          <span className="visually-hidden">Loading...</span>
+      <div className="container py-4 text-start">
+        {/* Title skeleton */}
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <div>
+            <div className="skeleton-pulse mb-2" style={{ width: '180px', height: '32px' }} />
+            <div className="skeleton-pulse" style={{ width: '260px', height: '18px' }} />
+          </div>
+          <div className="skeleton-pulse" style={{ width: '160px', height: '38px' }} />
+        </div>
+
+        {/* Top summary stats skeletons */}
+        <div className="row g-3 mb-4">
+          {[1, 2, 3, 4].map(i => (
+            <div className="col-6 col-md-3" key={i}>
+              <div className="glass-panel p-4 skeleton-pulse" style={{ height: '90px', border: '1px solid var(--border-grey)' }} />
+            </div>
+          ))}
+        </div>
+
+        {/* Charts & panels grid skeletons */}
+        <div className="row g-4 mb-4">
+          <div className="col-md-8">
+            <div className="glass-panel p-4 mb-4 skeleton-pulse" style={{ height: '340px', border: '1px solid var(--border-grey)' }} />
+            <div className="glass-panel p-4 skeleton-pulse" style={{ height: '320px', border: '1px solid var(--border-grey)' }} />
+          </div>
+          <div className="col-md-4">
+            <div className="glass-panel p-4 mb-4 skeleton-pulse" style={{ height: '280px', border: '1px solid var(--border-grey)' }} />
+            <div className="glass-panel p-4 skeleton-pulse" style={{ height: '260px', border: '1px solid var(--border-grey)' }} />
+          </div>
         </div>
       </div>
     );

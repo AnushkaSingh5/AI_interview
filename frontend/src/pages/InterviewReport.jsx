@@ -147,6 +147,34 @@ const InterviewReport = () => {
     window.open(pdfUrl, '_blank');
   };
 
+  if (loading && !evaluating) {
+    return (
+      <div className="container py-4 text-start">
+        {/* Title skeleton */}
+        <div className="d-flex justify-content-between align-items-center mb-4">
+          <div>
+            <div className="skeleton-pulse mb-2" style={{ width: '220px', height: '32px' }} />
+            <div className="skeleton-pulse" style={{ width: '320px', height: '18px' }} />
+          </div>
+          <div className="skeleton-pulse" style={{ width: '140px', height: '38px' }} />
+        </div>
+
+        {/* Top Split Skeletons */}
+        <div className="row g-4 mb-4">
+          <div className="col-md-6">
+            <div className="glass-panel p-4 skeleton-pulse" style={{ height: '320px', border: '1px solid var(--border-grey)' }} />
+          </div>
+          <div className="col-md-6">
+            <div className="glass-panel p-4 skeleton-pulse" style={{ height: '320px', border: '1px solid var(--border-grey)' }} />
+          </div>
+        </div>
+
+        {/* Roadmap skeleton */}
+        <div className="glass-panel p-4 mb-4 skeleton-pulse" style={{ height: '240px', border: '1px solid var(--border-grey)' }} />
+      </div>
+    );
+  }
+
   if (loading || evaluating) {
     return (
       <div className="d-flex justify-content-center align-items-center text-start" style={{ minHeight: '60vh' }}>

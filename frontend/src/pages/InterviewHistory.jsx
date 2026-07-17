@@ -233,10 +233,43 @@ const InterviewHistory = () => {
       {/* Main Table List */}
       <div className="glass-panel p-4 bg-white border shadow-sm">
         {loading ? (
-          <div className="py-5 text-center">
-            <div className="spinner-border text-primary" role="status">
-              <span className="visually-hidden">Loading...</span>
-            </div>
+          <div className="table-responsive">
+            <table className="table align-middle mb-0" style={{ fontSize: '0.86rem' }}>
+              <thead className="table-light">
+                <tr>
+                  <th>Interview</th>
+                  <th>Role</th>
+                  <th>Company</th>
+                  <th>Difficulty</th>
+                  <th>Date</th>
+                  <th>Score</th>
+                  <th>Status</th>
+                  <th className="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[1, 2, 3, 4, 5].map(i => (
+                  <tr key={i}>
+                    <td>
+                      <div className="skeleton-pulse mb-1" style={{ width: '120px', height: '16px' }} />
+                      <div className="skeleton-pulse" style={{ width: '80px', height: '12px' }} />
+                    </td>
+                    <td><div className="skeleton-pulse" style={{ width: '90px', height: '16px' }} /></td>
+                    <td><div className="skeleton-pulse" style={{ width: '80px', height: '16px' }} /></td>
+                    <td><div className="skeleton-pulse" style={{ width: '60px', height: '20px' }} /></td>
+                    <td><div className="skeleton-pulse" style={{ width: '70px', height: '16px' }} /></td>
+                    <td><div className="skeleton-pulse" style={{ width: '40px', height: '16px' }} /></td>
+                    <td><div className="skeleton-pulse" style={{ width: '75px', height: '20px' }} /></td>
+                    <td className="text-end">
+                      <div className="d-flex justify-content-end gap-1.5">
+                        <div className="skeleton-pulse rounded-circle" style={{ width: '28px', height: '28px' }} />
+                        <div className="skeleton-pulse rounded-circle" style={{ width: '28px', height: '28px' }} />
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : history.length === 0 ? (
           <div className="py-5 text-center text-muted">
