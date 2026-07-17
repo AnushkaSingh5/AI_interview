@@ -60,6 +60,11 @@ const QuestionEvaluationSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  evaluationEngine: {
+    type: String,
+    enum: ['Gemini', 'Local'],
+    default: 'Gemini'
+  },
   evaluatedAt: {
     type: Date,
     default: Date.now

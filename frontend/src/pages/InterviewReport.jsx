@@ -254,7 +254,12 @@ const InterviewReport = () => {
       <div className="glass-panel p-4 bg-white mb-4 shadow-sm" style={{ border: '1px solid var(--border-grey)' }}>
         <div className="row align-items-center g-3">
           <div className="col-md-8">
-            <span className="badge bg-success text-success bg-opacity-10 fw-bold mb-2">Mock Interview Completed</span>
+            <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+              <span className="badge bg-success text-success bg-opacity-10 fw-bold">Mock Interview Completed</span>
+              <span className={`badge ${ev.evaluationEngine === 'Local' ? 'bg-warning text-warning' : 'bg-primary text-primary'} bg-opacity-10 fw-bold`}>
+                Engine: {ev.evaluationEngine || 'Gemini'}
+              </span>
+            </div>
             <h1 className="fw-bold text-dark h3 mb-1">{sess.title}</h1>
             <p className="text-muted small mb-0">Role: <strong>{sess.role}</strong> &bull; Experience: <strong>{sess.experienceLevel}</strong> &bull; Company: <strong>{sess.company || 'General Tech Company'}</strong></p>
           </div>

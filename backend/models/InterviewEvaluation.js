@@ -57,6 +57,11 @@ const InterviewEvaluationSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  evaluationEngine: {
+    type: String,
+    enum: ['Gemini', 'Local'],
+    default: 'Gemini'
+  },
   createdAt: {
     type: Date,
     default: Date.now

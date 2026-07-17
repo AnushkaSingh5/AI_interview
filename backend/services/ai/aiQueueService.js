@@ -149,7 +149,17 @@ const executeEvaluationJob = async (job) => {
         await delay(2000);
       }
 
-      const evalData = await evaluateAnswer(q, answerText, session, { forceLocal: useLocalFallback });
+      const wordCount = answerText ? answerText.trim().split(/\s+/).filter(Boolean).length : 0;
+      const questionBehavior = {
+        timeTaken: ans ? ans.timeTaken : 0,
+        skipped: ans ? ans.skipped : false,
+        wordCount
+      };
+
+      const evalData = await evaluateAnswer(q, answerText, session, { 
+        forceLocal: useLocalFallback,
+        behavior: questionBehavior
+      });
 
       if (evalData.isQuotaExhausted) {
         if (!useLocalFallback) {
@@ -172,7 +182,8 @@ const executeEvaluationJob = async (job) => {
         expectedAnswer: q.expectedAnswer || evalData.expectedAnswer || '',
         missingPoints: evalData.missingPoints || [],
         improvementSuggestions: evalData.improvementSuggestions || [],
-        idealAnswer: evalData.idealAnswer || ''
+        idealAnswer: evalData.idealAnswer || '',
+        evaluationEngine: evalData.evaluationEngine || (useLocalFallback ? 'Local' : 'Gemini')
       });
 
       evaluatedQuestions.push({
@@ -185,7 +196,24 @@ const executeEvaluationJob = async (job) => {
     await delay(2000);
     console.log(`[AI Queue] [Session ${session.interviewId}] Compiling overall report...`);
 
-    const overallReport = await compileOverallReport(evaluatedQuestions, session);
+    // Calculate overall interview behavior metrics
+    const totalTimeSeconds = answers.reduce((acc, curr) => acc + (curr.timeTaken || 0), 0);
+    const avgTimePerQuestion = questions.length > 0 ? totalTimeSeconds / questions.length : 0;
+    const skippedCount = answers.filter(a => a.skipped).length;
+    const completionRate = questions.length > 0 ? ((questions.length - skippedCount) / questions.length) * 100 : 0;
+    
+    const wordCounts = answers.map(a => a.answer ? a.answer.trim().split(/\s+/).filter(Boolean).length : 0);
+    const avgWordCount = wordCounts.length > 0 ? wordCounts.reduce((acc, curr) => acc + curr, 0) / wordCounts.length : 0;
+
+    const overallBehavior = {
+      totalTimeSeconds,
+      avgTimePerQuestion,
+      skippedCount,
+      completionRate,
+      avgWordCount
+    };
+
+    const overallReport = await compileOverallReport(evaluatedQuestions, session, { behavior: overallBehavior });
 
     // Save overall report
     await InterviewEvaluation.create({
@@ -201,7 +229,8 @@ const executeEvaluationJob = async (job) => {
       recommendations: overallReport.recommendations || [],
       learningRoadmap: overallReport.learningRoadmap || [],
       skillHeatmap: overallReport.skillHeatmap || [],
-      overallFeedback: overallReport.overallFeedback || ''
+      overallFeedback: overallReport.overallFeedback || '',
+      evaluationEngine: overallReport.evaluationEngine || (useLocalFallback ? 'Local' : 'Gemini')
     });
 
     // Mark session as complete
