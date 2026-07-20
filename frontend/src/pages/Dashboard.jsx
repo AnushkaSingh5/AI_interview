@@ -138,18 +138,14 @@ const Dashboard = () => {
   const isEligibleForInterview = completion === 100 && isResumeDone;
 
   const handleStartInterview = () => {
-    if (!isEligibleForInterview) {
-      toast.warning('Complete your profile and upload your resume to start interviews.');
-      return;
-    }
-    navigate('/interview/create');
+    navigate('/mock-interviews');
   };
 
   const stats = [
-    { value: '0', label: 'Mock Interviews Completed' },
-    { value: 'N/A', label: 'Average Score This Month' },
-    { value: '0', label: 'Hours Practiced This Month' },
-    { value: '0', label: 'Current Streak Days' }
+    { value: summary?.interviewsCompleted !== undefined ? summary.interviewsCompleted : interviews.length, label: 'Mock Interviews Completed' },
+    { value: summary?.overallAverageScore !== undefined ? `${summary.overallAverageScore}%` : 'N/A', label: 'Average Score' },
+    { value: summary?.hoursPracticed !== undefined ? `${summary.hoursPracticed}h` : '0h', label: 'Hours Practiced' },
+    { value: summary?.currentStreak !== undefined ? `${summary.currentStreak} Days` : '0 Days', label: 'Current Streak Days' }
   ];
 
   if (loading) {
@@ -422,35 +418,38 @@ const Dashboard = () => {
                 <FiPlay className="text-muted" />
               </div>
               <h3 className="h6 fw-bold mb-2 text-dark">Mock Interviews</h3>
-              <p className="text-muted small mb-4" style={{ lineHeight: '1.4' }}>Start a personalized, AI-driven interactive session tailored to your exact profile and target job role.</p>
+              <p className="text-muted small mb-4" style={{ lineHeight: '1.4' }}>Start a personalized, AI-driven interactive session tailored to your profile and target job role.</p>
             </div>
             <div>
-              {!isEligibleForInterview && (
-                <span className="text-danger d-block mb-2 fw-semibold" style={{ fontSize: '0.74rem' }}>
-                  ⚠️ Complete your profile before starting interviews.
-                </span>
-              )}
               <button 
-                onClick={handleStartInterview} 
-                disabled={!isEligibleForInterview}
+                onClick={() => navigate('/mock-interviews')} 
                 className="btn btn-sm btn-primary-purple w-100 py-2 d-flex align-items-center justify-content-center gap-1.5"
               >
-                <FiPlay style={{ fill: 'white' }} /> Start Mock Interview
+                <FiPlay style={{ fill: 'white' }} /> Go to Mock Interviews
               </button>
             </div>
           </div>
         </div>
 
-        {/* Card 2: Interview History (Coming Soon) */}
-        <div className="col-md-6 col-xl-3 text-start opacity-75">
-          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)', filter: 'grayscale(30%)' }}>
+        {/* Card 2: Interview History */}
+        <div className="col-md-6 col-xl-3 text-start">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)' }}>
             <div>
               <div className="d-flex align-items-center justify-content-between mb-3">
-                <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold">Coming Soon</span>
+                <span className="badge bg-success bg-opacity-10 text-success fw-semibold">Active</span>
                 <FiClock className="text-muted" />
               </div>
               <h3 className="h6 fw-bold mb-2 text-dark">Interview History</h3>
-              <p className="text-muted small mb-0" style={{ lineHeight: '1.4' }}>Browse through your previous AI interview transcripts, answers, and detailed grading sheets.</p>
+              <p className="text-muted small mb-3" style={{ lineHeight: '1.4' }}>Browse through your previous AI interview transcripts, answers, and detailed grading sheets.</p>
+            </div>
+            <div>
+              <button 
+                onClick={() => navigate('/mock-interviews')} 
+                className="btn btn-sm btn-outline-primary border w-100 py-2"
+                style={{ fontSize: '0.76rem' }}
+              >
+                View History
+              </button>
             </div>
           </div>
         </div>
@@ -511,6 +510,9 @@ const Dashboard = () => {
           <div className="glass-panel p-4 h-100 bg-white text-start" style={{ border: '1px solid var(--border-grey)' }}>
             <div className="d-flex justify-content-between align-items-center mb-4">
               <h3 className="h6 fw-bold mb-0 text-dark">Recent Interviews</h3>
+              <Link to="/mock-interviews" className="text-decoration-none small fw-semibold text-primary d-flex align-items-center gap-1">
+                View All <FiExternalLink />
+              </Link>
             </div>
             
             {interviews.length === 0 ? (
