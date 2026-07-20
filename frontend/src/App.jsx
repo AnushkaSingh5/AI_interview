@@ -30,6 +30,8 @@ import InterviewCreate from './pages/InterviewCreate';
 import InterviewQuestionsReview from './pages/InterviewQuestionsReview';
 import InterviewActive from './pages/InterviewActive';
 import InterviewReport from './pages/InterviewReport';
+import PracticeHub from './pages/PracticeHub';
+import PracticeSessionView from './pages/PracticeSessionView';
 
 function App() {
   return (
@@ -80,6 +82,8 @@ function App() {
               <Route path="/interview/:id/questions" element={<InterviewQuestionsReview />} />
               <Route path="/interview/:id/active" element={<InterviewActive />} />
               <Route path="/interview/:id/report" element={<InterviewReport />} />
+              <Route path="/practice" element={<PracticeHub />} />
+              <Route path="/practice/session/:id" element={<PracticeSessionView />} />
             </Route>
           </Route>
 

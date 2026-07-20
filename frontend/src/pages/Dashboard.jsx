@@ -475,16 +475,23 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Card 4: Practice Questions (Coming Soon) */}
-        <div className="col-md-6 col-xl-3 text-start opacity-75">
-          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)', filter: 'grayscale(30%)' }}>
+        {/* Card 4: Practice Questions (Active) */}
+        <div className="col-md-6 col-xl-3 text-start">
+          <div className="mockup-panel-card h-100 d-flex flex-column justify-content-between p-4 bg-white" style={{ border: '1px solid var(--border-grey)' }}>
             <div>
               <div className="d-flex align-items-center justify-content-between mb-3">
-                <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold">Coming Soon</span>
-                <FiBookOpen className="text-muted" />
+                <span className="badge bg-success bg-opacity-10 text-success fw-semibold">Active</span>
+                <FiBookOpen className="text-primary" />
               </div>
               <h3 className="h6 fw-bold mb-2 text-dark">Practice Questions</h3>
-              <p className="text-muted small mb-0" style={{ lineHeight: '1.4' }}>Tackle curated technical questions, behavioral scenarios, and coding challenges on demand.</p>
+              <p className="text-muted small mb-3" style={{ lineHeight: '1.4' }}>Tackle curated technical questions, behavioral scenarios, and company challenges on demand.</p>
+              <button 
+                onClick={() => navigate('/practice')} 
+                className="btn btn-sm btn-outline-primary border w-100 py-1.5"
+                style={{ fontSize: '0.76rem' }}
+              >
+                Open Practice Hub
+              </button>
             </div>
           </div>
         </div>

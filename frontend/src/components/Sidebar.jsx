@@ -53,10 +53,10 @@ const Sidebar = () => {
             </NavLink>
           </li>
           <li>
-            <a href="#questions" onClick={(e) => handleLockedItem(e, 'Practice Questions')} className="sidebar-item-link">
+            <NavLink to="/practice" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiCheckSquare />
               <span>Practice Questions</span>
-            </a>
+            </NavLink>
           </li>
           <li>
             <NavLink to="/performance" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>

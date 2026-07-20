@@ -1,34 +1,10 @@
 const axios = require('axios');
+const { parseGeminiJson } = require('../../utils/jsonParser');
 
 const apiKey = process.env.GEMINI_API_KEY;
 
 const extractAndParseJSON = (rawText) => {
-  if (!rawText) return null;
-  console.log(`[AI Evaluator] Raw Response to parse:\n${rawText}`);
-
-  let trimmed = rawText.trim();
-  
-  // Remove markdown JSON code blocks if present
-  if (trimmed.startsWith('```')) {
-    trimmed = trimmed.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-  }
-
-  // Find first { and last } to extract pure JSON block
-  const startIdx = trimmed.indexOf('{');
-  const endIdx = trimmed.lastIndexOf('}');
-  
-  if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-    trimmed = trimmed.substring(startIdx, endIdx + 1);
-  }
-
-  try {
-    const parsed = JSON.parse(trimmed);
-    console.log(`[AI Evaluator] Successfully parsed JSON structure.`);
-    return parsed;
-  } catch (err) {
-    console.error(`[AI Evaluator] JSON Parsing Error: ${err.message}. Raw segment was:\n${trimmed}`);
-    throw err;
-  }
+  return parseGeminiJson(rawText);
 };
 
 // Utility to execute requests with custom backoff retry delays

@@ -1,5 +1,9 @@
 const axios = require('axios');
-const path = require('path');
+const questionGenerator = require('./ai/questionGenerator');
+const evaluator = require('./ai/evaluator');
+const { parseGeminiJson } = require('../utils/parseGeminiJson');
+const { executeWithRetry } = require('../utils/geminiRetry');
+const { logAiEvent } = require('../utils/logger');
 
 // Ensure GEMINI_API_KEY is present on load
 const apiKey = process.env.GEMINI_API_KEY;
@@ -11,265 +15,233 @@ if (!apiKey) {
   throw new Error('GEMINI_API_KEY is not defined in environment variables.');
 }
 
-// Log loaded masked key for debugging
 const maskedKey = apiKey.length > 8 ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : '***';
 console.log(`[AI Service] Initialize: API Key successfully loaded (${maskedKey})`);
 
 /**
- * Sends a minimal prompt to Gemini to verify if the API key and connection are healthy.
- * @returns {Promise<{ success: boolean, model: string, responseTimeMs: number }>}
+ * Core raw Gemini HTTP request function
+ */
+const rawGeminiRequest = async (prompt, options = {}) => {
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json' }
+  };
+
+  const timeout = options.timeout || 45000;
+
+  try {
+    const response = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout
+    });
+
+    const candidateText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      throw new Error('Empty text candidate returned by Gemini API');
+    }
+    return candidateText;
+  } catch (error) {
+    const status = error.response?.status || 'TIMEOUT/NETWORK';
+    const message = error.response?.data?.error?.message || error.message;
+    console.error(`[AI Service Gemini Request Error] Status: ${status}, Message: ${message}`);
+    throw new Error(`Gemini API Request Failed (${status}): ${message}`);
+  }
+};
+
+/**
+ * Health Check API
  */
 const checkHealth = async () => {
-  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
   const startTime = Date.now();
 
   try {
     const response = await axios.post(
       url,
-      {
-        contents: [{ parts: [{ text: 'Hello' }] }]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 30000 // 30 seconds timeout for health check
-      }
+      { contents: [{ parts: [{ text: 'Hello' }] }] },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 15000 }
     );
-
     const duration = Date.now() - startTime;
     if (response.data && response.data.candidates) {
-      return {
-        success: true,
-        model,
-        responseTimeMs: duration
-      };
+      return { success: true, model, responseTimeMs: duration };
     }
-    throw new Error('Invalid response structure returned during health check');
+    throw new Error('Invalid health check response structure');
   } catch (error) {
     const duration = Date.now() - startTime;
     const status = error.response?.status || 'TIMEOUT/NETWORK';
-    const message = error.message;
-    const body = error.response?.data ? JSON.stringify(error.response.data) : 'N/A';
-
-    console.error(`[AI Service] Health check failed in ${duration}ms: Status=${status}, Message=${message}, Body=${body}`);
-    throw {
-      success: false,
-      model,
-      responseTimeMs: duration,
-      errorStatus: status,
-      errorMessage: message,
-      errorDetails: error.response?.data
-    };
+    throw { success: false, model, responseTimeMs: duration, errorStatus: status, errorMessage: error.message };
   }
 };
 
 /**
- * Extracts and parses raw resume text into structured JSON schema using Gemini.
- * @param {string} text - Raw text extracted from PDF/DOCX resume file
- * @returns {Promise<object>} Parsed structured resume JSON object
+ * 1. Resume Parsing
  */
-const parseResumeWithAI = async (text) => {
-  // 1. Validate input text (Step 8)
+const parseResume = async (text) => {
   if (!text || typeof text !== 'string' || text.trim().length === 0) {
     throw new Error('Resume text extraction is empty or invalid');
   }
 
-  const rawLength = text.length;
-  console.log(`[AI Service] Starting resume parse. Raw character count: ${rawLength}`);
-
-  // 2. Payload Validation & Trimming/Chunking (Step 7)
   const maxSafeChars = 12000;
-  const trimmedText = rawLength > maxSafeChars ? text.substring(0, maxSafeChars) : text;
-  if (rawLength > maxSafeChars) {
-    console.log(`[AI Service] Payload size warning: Text length (${rawLength}) exceeded limit of ${maxSafeChars}. Automatically trimmed.`);
-  }
+  const trimmedText = text.length > maxSafeChars ? text.substring(0, maxSafeChars) : text;
 
   const prompt = `
-You are an expert resume parser. Analyze the following raw resume text and extract it into a structured JSON object matching this schema. Make sure to categorize skills, experience, education, projects, certifications, achievements, soft skills, programming languages, frameworks, databases, and tools.
-
-JSON Schema:
+You are an expert resume parser. Analyze the raw resume text below and extract it into a structured JSON object matching this schema:
 {
-  "personalInformation": {
-    "name": "Extract full name",
-    "email": "Extract email address",
-    "phone": "Extract phone number",
-    "bio": "Write a short professional summary bio based on the resume"
-  },
-  "education": [
-    {
-      "institution": "School/University name",
-      "degree": "Degree name",
-      "fieldOfStudy": "Field of study",
-      "startDate": "Start date or year",
-      "endDate": "End date/year or Present",
-      "gpa": "GPA if present"
-    }
-  ],
-  "experience": [
-    {
-      "company": "Company name",
-      "position": "Job title",
-      "startDate": "Start date",
-      "endDate": "End date or Present",
-      "description": "Short description of duties and achievements"
-    }
-  ],
-  "projects": [
-    {
-      "title": "Project title",
-      "description": "Project details",
-      "technologies": ["Array of tools/technologies used"]
-    }
-  ],
-  "certifications": ["Array of strings"],
-  "achievements": ["Array of strings"],
-  "technicalSkills": ["Array of general technical skills"],
-  "softSkills": ["Array of soft skills"],
-  "programmingLanguages": ["Array of programming languages like Python, JavaScript, Java, C++, Go, etc."],
-  "frameworks": ["Array of frameworks like React, Node.js, Express, Angular, Vue, Django, Flask, etc."],
-  "databases": ["Array of databases like MongoDB, PostgreSQL, MySQL, Redis, DynamoDB, etc."],
-  "tools": ["Array of tools like Git, Docker, Kubernetes, AWS, Jenkins, Jira, etc."],
-  "interests": ["Array of interests"]
+  "personalInformation": { "name": "", "email": "", "phone": "", "bio": "" },
+  "education": [{ "institution": "", "degree": "", "fieldOfStudy": "", "startDate": "", "endDate": "", "gpa": "" }],
+  "experience": [{ "company": "", "position": "", "startDate": "", "endDate": "", "description": "" }],
+  "projects": [{ "title": "", "description": "", "technologies": [] }],
+  "certifications": [],
+  "achievements": [],
+  "technicalSkills": [],
+  "softSkills": [],
+  "programmingLanguages": [],
+  "frameworks": [],
+  "databases": [],
+  "tools": [],
+  "interests": []
 }
 
 Resume Raw Text:
 ${trimmedText}
 `;
 
-  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: 'application/json' }
-  };
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Resume Parsing'
+  );
+};
 
-  const payloadSize = Buffer.byteLength(JSON.stringify(payload));
-  console.log(`[AI Service] Request details: Prompt Length=${prompt.length} chars, Payload Size=${payloadSize} bytes, Model=${model}`);
+/**
+ * 2. Interview Question Generation
+ */
+const generateInterviewQuestions = async (user, resumeData, session) => {
+  return await questionGenerator.generateInterviewQuestions(user, resumeData, session);
+};
 
-  // 3. Request execution with exponential backoff retry loop (Steps 5 & 6)
-  let attempts = 0;
-  const maxAttempts = 1; // Fails immediately and falls back to local template questions
-  let backoffDelay = 1000;
-  let response;
-  let duration = 0;
+/**
+ * 3. Question Answer Evaluation
+ */
+const evaluateAnswer = async (questionData, answerText, session, options = {}) => {
+  return await evaluator.evaluateAnswer(questionData, answerText, session, options);
+};
 
-  while (attempts < maxAttempts) {
-    attempts++;
-    const startTime = Date.now();
-    try {
-      console.log(`[AI Service] Sending Gemini request (Attempt ${attempts}/${maxAttempts}, Timeout=60s)...`);
-      response = await axios.post(url, payload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 60000 // 60 seconds timeout (Step 5)
-      });
-      
-      duration = Date.now() - startTime;
-      console.log(`[AI Service] Request succeeded in ${duration}ms.`);
-      break; // break loop on success
-    } catch (error) {
-      duration = Date.now() - startTime;
-      const status = error.response?.status || 'TIMEOUT/NETWORK';
-      const errMsg = error.message;
-      const errBody = error.response?.data ? JSON.stringify(error.response.data, null, 2) : 'N/A';
+/**
+ * 4. Overall Interview Report Compilation
+ */
+const compileInterviewReport = async (session, evaluations) => {
+  return await evaluator.evaluateOverallReport(session, evaluations);
+};
 
-      console.error(`[AI Service] Request failed on attempt ${attempts}/${maxAttempts} in ${duration}ms (Model=${model}, InputLength=${prompt.length}):`);
-      console.error(`  - HTTP Status: ${status}`);
-      console.error(`  - Error Message: ${errMsg}`);
-      if (error.response?.data) {
-        console.error(`  - Response Body: ${errBody}`);
-      }
-
-      // Check if the failure is a temporary status code or a timeout/network drop (Step 6)
-      const retryableStatuses = [429, 500, 502, 503, 504];
-      const isTimeoutOrNetwork = !error.response || error.code === 'ECONNABORTED';
-      const isRetryable = retryableStatuses.includes(status) || isTimeoutOrNetwork;
-
-      if (isRetryable && attempts < maxAttempts) {
-        console.log(`[AI Service] Temporary issue detected. Retrying in ${backoffDelay}ms using backoff...`);
-        await new Promise((resolve) => setTimeout(resolve, backoffDelay));
-        backoffDelay *= 2; // exponential backoff
-      } else {
-        console.error(`[AI Service] Max attempts reached or non-retryable error. Propagating failure.`);
-        throw new Error(`Gemini request failed: ${errMsg} (Status: ${status})`);
-      }
-    }
+/**
+ * 5. Practice Hub Question Generation
+ */
+const generatePracticeQuestions = async ({ mode = 'Technical', topic = 'General', company = '', difficulty = 'Medium', questionCount = 5 }) => {
+  const prompt = `Generate ${questionCount} ${difficulty} level interview practice questions for a candidate in mode "${mode}", topic "${topic}", company "${company || 'General'}".
+Return strictly a JSON array of objects with the schema:
+[
+  {
+    "question": "Question text here...",
+    "expectedAnswer": "Brief expected key concepts..."
   }
+]`;
 
-  // 4. Validate and sanitize Gemini JSON response (Step 12)
-  if (!response || !response.data) {
-    throw new Error('No response data received from Gemini API');
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Practice Questions'
+  );
+};
+
+/**
+ * 6. Daily Challenge Generation
+ */
+const generateDailyChallenge = async () => {
+  const prompt = `Generate 5 mixed daily interview challenge questions covering JavaScript, React, DBMS, System Design, and Behavioral HR fit.
+Return strictly a JSON array of 5 objects matching:
+[
+  {
+    "topic": "Topic Name",
+    "question": "Question Text",
+    "expectedAnswer": "Key Answer Concepts"
   }
+]`;
 
-  const textResponse = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!textResponse) {
-    throw new Error('Invalid empty text candidate returned by Gemini API');
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Daily Challenge'
+  );
+};
+
+/**
+ * 7. Personalized Learning Roadmap Generation
+ */
+const generateLearningRoadmap = async (user, weakTopics = []) => {
+  const prompt = `Create a 4-week personalized interview preparation roadmap for a candidate targeting the role "${user?.targetRole || 'Software Engineer'}".
+Weak areas identified: ${weakTopics.join(', ') || 'DBMS, System Design, React'}.
+
+Return strictly a JSON array of 4 objects with this schema:
+[
+  {
+    "weekNumber": 1,
+    "topic": "Topic Name",
+    "focusArea": "Key Focus Area",
+    "reason": "Why this topic is prioritized"
   }
+]`;
 
-  console.log(`[AI Service] Response text received (${textResponse.length} chars). Validating JSON structure...`);
-  
-  // Helper to balance braces and extract clean JSON substring (Step 12)
-  const balanceBracesAndParse = (str) => {
-    const firstBrace = str.indexOf('{');
-    if (firstBrace === -1) throw new Error('No open brace found');
-    
-    let openBrackets = 0;
-    let inString = false;
-    let escape = false;
-    
-    for (let i = firstBrace; i < str.length; i++) {
-      const char = str[i];
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (char === '\\') {
-        escape = true;
-        continue;
-      }
-      if (char === '"') {
-        inString = !inString;
-        continue;
-      }
-      if (!inString) {
-        if (char === '{') {
-          openBrackets++;
-        } else if (char === '}') {
-          openBrackets--;
-          if (openBrackets === 0) {
-            const candidate = str.substring(firstBrace, i + 1);
-            return JSON.parse(candidate);
-          }
-        }
-      }
-    }
-    throw new Error('Braces could not be balanced');
-  };
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Learning Roadmap'
+  );
+};
 
-  let parsedData;
-  try {
-    parsedData = JSON.parse(textResponse);
-  } catch (parseError) {
-    console.warn(`[AI Service] JSON parse failed on raw text. Executing markdown fence cleanup & brace balancing recovery...`);
-    // Clean markdown syntax blocks
-    let cleanedText = textResponse.trim();
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-    }
-    
-    try {
-      parsedData = balanceBracesAndParse(cleanedText);
-      console.log(`[AI Service] JSON recovery (brace balanced parsing) successful!`);
-    } catch (recoveryError) {
-      console.error(`[AI Service] JSON recovery failed:`, recoveryError.message);
-      console.error(`[AI Service] Unparseable content:\n${textResponse}`);
-      throw new Error(`Gemini response contains invalid JSON syntax: ${parseError.message}`);
-    }
-  }
+/**
+ * 8. Practice Answer Concept Explanation
+ */
+const explainConcept = async (topic, question, userAnswer) => {
+  const prompt = `You are an expert interview coach evaluating a practice answer.
+Question: "${question}"
+Topic: "${topic}"
+Candidate Answer: "${userAnswer}"
 
-  return parsedData;
+Evaluate the candidate answer and provide a JSON response with:
+{
+  "score": 8, // Integer 0 to 10
+  "feedback": "Concise feedback on accuracy...",
+  "idealAnswer": "Comprehensive model answer...",
+  "conceptExplanation": "Deep-dive explanation of the underlying concepts...",
+  "commonMistakes": ["Mistake 1", "Mistake 2"],
+  "interviewTips": ["Tip 1", "Tip 2"],
+  "relatedTopics": ["Topic 1", "Topic 2"]
+}`;
+
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Concept Explanation'
+  );
 };
 
 module.exports = {
   checkHealth,
-  parseResumeWithAI
+  parseResume,
+  parseResumeWithAI: parseResume, // Backward compatibility alias
+  generateInterviewQuestions,
+  generateQuestions: generateInterviewQuestions, // Alias
+  evaluateAnswer,
+  compileInterviewReport,
+  evaluateOverallReport: compileInterviewReport, // Alias
+  generatePracticeQuestions,
+  generateDailyChallenge,
+  generateLearningRoadmap,
+  explainConcept,
+  evaluatePracticeAnswer: explainConcept // Alias
 };

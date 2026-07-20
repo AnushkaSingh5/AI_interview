@@ -40,6 +40,8 @@ const balanceBracesAndParse = (str) => {
   throw new Error('Brackets could not be balanced');
 };
 
+const { parseGeminiJson } = require('../../utils/jsonParser');
+
 exports.validateAIResponse = (rawResponseText, expectedCount, sessionDifficulty) => {
   if (!rawResponseText || typeof rawResponseText !== 'string') {
     return { isValid: false, errors: ['Response is empty or not a string'] };
@@ -48,23 +50,14 @@ exports.validateAIResponse = (rawResponseText, expectedCount, sessionDifficulty)
   let parsedArray = null;
   const errors = [];
 
-  // 1. Safe JSON parsing with fallback markdown block cleanup & brace recovery
+  // 1. Safe JSON parsing via centralized parseGeminiJson helper
   try {
-    parsedArray = JSON.parse(rawResponseText);
+    parsedArray = parseGeminiJson(rawResponseText);
   } catch (parseError) {
-    let cleanedText = rawResponseText.trim();
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-    }
-    
-    try {
-      parsedArray = balanceBracesAndParse(cleanedText);
-    } catch (recoveryError) {
-      return { 
-        isValid: false, 
-        errors: [`JSON parse error: ${parseError.message}`, `Recovery error: ${recoveryError.message}`] 
-      };
-    }
+    return { 
+      isValid: false, 
+      errors: [`Gemini JSON parse error: ${parseError.message}`] 
+    };
   }
 
   if (!Array.isArray(parsedArray)) {
