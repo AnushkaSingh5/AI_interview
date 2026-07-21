@@ -463,7 +463,13 @@ const MockInterviews = () => {
                         {item.status === 'Completed' ? (
                           <>
                             <button
-                              onClick={() => navigate(`/interview/${item.interviewId}/report`)}
+                              onClick={() => {
+                                if (item.interviewMode === 'Voice') {
+                                  navigate(`/voice-interview/report/${item.interviewId}`);
+                                } else {
+                                  navigate(`/interview/${item.interviewId}/report`);
+                                }
+                              }}
                               className="btn btn-sm btn-light p-1.5 rounded-circle border"
                               title="View Report Card"
                             >
@@ -484,21 +490,19 @@ const MockInterviews = () => {
                               <FiDownload />
                             </button>
                           </>
-                        ) : item.status === 'InProgress' ? (
+                        ) : (
                           <button
-                            onClick={() => navigate(`/interview/${item.interviewId}/active`)}
+                            onClick={() => {
+                              if (item.interviewMode === 'Voice') {
+                                navigate(`/voice-interview/session/${item.interviewId}`);
+                              } else {
+                                navigate(`/interview/${item.interviewId}/active`);
+                              }
+                            }}
                             className="btn btn-sm btn-success text-white px-2 py-1"
                             style={{ fontSize: '0.74rem' }}
                           >
                             Resume
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => navigate(`/interview/${item.interviewId}/report`)}
-                            className="btn btn-sm btn-info text-white px-2 py-1"
-                            style={{ fontSize: '0.74rem' }}
-                          >
-                            View Status
                           </button>
                         )}
                         <button

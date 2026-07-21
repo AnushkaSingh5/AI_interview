@@ -178,11 +178,18 @@ exports.getInterviewHistory = async (req, res, next) => {
       .skip(skip)
       .limit(limitNum);
 
+    const VoiceInterview = require('../models/VoiceInterview');
     const sessionIds = sessions.map(s => s._id);
     const evaluations = await InterviewEvaluation.find({ sessionId: { $in: sessionIds } });
+    const voiceInterviews = await VoiceInterview.find({ user: userId });
 
     const history = sessions.map(s => {
       const matchedEval = evaluations.find(e => e.sessionId.toString() === s._id.toString());
+      const matchedVoice = voiceInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
+
+      const isCompleted = s.status === 'Completed' || (matchedVoice && matchedVoice.status === 'Completed');
+      const score = matchedEval ? matchedEval.overallScore : (matchedVoice ? matchedVoice.overallScore : null);
+
       return {
         _id: s._id,
         interviewId: s.interviewId,
@@ -191,10 +198,11 @@ exports.getInterviewHistory = async (req, res, next) => {
         company: s.company,
         difficulty: s.difficulty,
         interviewType: s.interviewType,
+        interviewMode: s.interviewMode || 'Text',
         questionCount: s.questionCount,
-        status: s.status,
-        completedAt: s.completedAt || s.submittedAt || s.updatedAt,
-        overallScore: matchedEval ? matchedEval.overallScore : null
+        status: isCompleted ? 'Completed' : s.status,
+        completedAt: s.completedAt || (matchedVoice ? matchedVoice.completedAt : null) || s.submittedAt || s.updatedAt,
+        overallScore: score
       };
     });
 

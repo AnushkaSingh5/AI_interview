@@ -11,6 +11,8 @@ const InterviewHistory = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState([]);
+  const [voiceHistory, setVoiceHistory] = useState([]);
+  const [activeTab, setActiveTab] = useState('standard'); // 'standard' | 'voice'
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -39,7 +41,19 @@ const InterviewHistory = () => {
 
   useEffect(() => {
     fetchHistory();
+    fetchVoiceHistory();
   }, [page, sortBy, sortOrder, difficulty, interviewType, status]);
+
+  const fetchVoiceHistory = async () => {
+    try {
+      const res = await axiosInstance.get('/voice/history');
+      if (res.data && res.data.voiceInterviews) {
+        setVoiceHistory(res.data.voiceInterviews);
+      }
+    } catch (e) {
+      console.warn('Could not fetch voice history:', e.message);
+    }
+  };
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -320,10 +334,16 @@ const InterviewHistory = () => {
                     </td>
                     <td className="text-end">
                       <div className="d-flex justify-content-end gap-1.5">
-                        {item.status === 'Completed' && (
+                        {item.status === 'Completed' ? (
                           <>
                             <button
-                              onClick={() => navigate(`/interview/${item.interviewId}/report`)}
+                              onClick={() => {
+                                if (item.interviewMode === 'Voice') {
+                                  navigate(`/voice-interview/report/${item.interviewId}`);
+                                } else {
+                                  navigate(`/interview/${item.interviewId}/report`);
+                                }
+                              }}
                               className="btn btn-sm btn-light p-1.5 rounded-circle border"
                               title="View Performance Report"
                             >
@@ -344,6 +364,21 @@ const InterviewHistory = () => {
                               <FiDownload />
                             </button>
                           </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (item.interviewMode === 'Voice') {
+                                navigate(`/voice-interview/session/${item.interviewId}`);
+                              } else {
+                                navigate(`/interview/${item.interviewId}/active`);
+                              }
+                            }}
+                            className="btn btn-sm btn-success text-white px-2.5 py-1 fw-bold rounded-3"
+                            style={{ fontSize: '0.74rem' }}
+                            title="Resume Interview"
+                          >
+                            Resume
+                          </button>
                         )}
                         <button
                           onClick={() => handleRetake(item.interviewId)}

@@ -230,6 +230,65 @@ Evaluate the candidate answer and provide a JSON response with:
   );
 };
 
+/**
+ * 9. Voice Response Evaluation (Technical + Vocal Communication)
+ */
+const evaluateVoiceAnswer = async ({ questionText, topic, transcriptText, wordCount = 0, wpm = 0, fillerCount = 0 }) => {
+  const prompt = `You are a corporate executive interviewer evaluating a verbal voice response.
+Question: "${questionText}"
+Topic: "${topic}"
+Candidate Spoken Transcript: "${transcriptText}"
+Word Count: ${wordCount}, Speaking Speed: ${wpm} WPM, Filler Words Detected: ${fillerCount}.
+
+Evaluate both TECHNICAL CONTENT and VOCAL COMMUNICATION QUALITY.
+Return strictly a JSON object matching this schema:
+{
+  "score": 8, // Overall response score 0-10
+  "technicalScore": 85, // 0-100 technical correctness
+  "communicationScore": 90, // 0-100 communication clarity
+  "fluencyScore": 88, // 0-100 fluency & speech flow
+  "confidenceScore": 82, // 0-100 vocal confidence
+  "feedback": "Detailed feedback on both technical response and vocal delivery style...",
+  "idealAnswer": "Comprehensive ideal answer breakdown...",
+  "communicationTips": ["Vocal tip 1", "Pacing tip 2"]
+}`;
+
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Voice Answer Evaluation'
+  );
+};
+
+/**
+ * 10. Voice Interview Overall Report Compilation
+ */
+const compileVoiceReport = async (role, difficulty, evaluatedQuestions = []) => {
+  const prompt = `You are a senior interview analytics engine compiling a final Voice & Communication Report.
+Target Role: "${role}"
+Difficulty: "${difficulty}"
+Questions & Candidate Transcripts: ${JSON.stringify(evaluatedQuestions.map(q => ({ question: q.questionText, score: q.score, wpm: q.speakingSpeedWpm, fillers: q.fillerWordsCount })))}
+
+Return strictly a JSON object with overall metrics:
+{
+  "overallScore": 84,
+  "technicalScore": 85,
+  "communicationScore": 88,
+  "confidenceScore": 82,
+  "fluencyScore": 86,
+  "averageWpm": 135,
+  "speakingPace": "Optimal", // 'Slow', 'Optimal', 'Fast'
+  "grammarObservations": ["Observation 1", "Observation 2"],
+  "improvementSuggestions": ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+}`;
+
+  return await executeWithRetry(
+    (p) => rawGeminiRequest(p),
+    prompt,
+    'Voice Report Compilation'
+  );
+};
+
 module.exports = {
   checkHealth,
   parseResume,
@@ -243,5 +302,7 @@ module.exports = {
   generateDailyChallenge,
   generateLearningRoadmap,
   explainConcept,
-  evaluatePracticeAnswer: explainConcept // Alias
+  evaluatePracticeAnswer: explainConcept, // Alias
+  evaluateVoiceAnswer,
+  compileVoiceReport
 };

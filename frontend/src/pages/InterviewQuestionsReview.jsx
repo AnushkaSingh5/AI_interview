@@ -143,8 +143,12 @@ const InterviewQuestionsReview = () => {
     try {
       const response = await axiosInstance.post(`/interviews/${session._id}/start`);
       if (response.data && response.data.success) {
-        toast.success('Interview started successfully! The timer has begun.');
-        navigate(`/interview/${session.interviewId}/active`);
+        toast.success('Interview started successfully!');
+        if (session?.interviewMode === 'Voice') {
+          navigate(`/voice-interview/check?sessionId=${session.interviewId}`);
+        } else {
+          navigate(`/interview/${session.interviewId}/active`);
+        }
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to initialize active interview session.');

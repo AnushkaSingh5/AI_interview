@@ -585,7 +585,7 @@ const InterviewCreate = () => {
                     <div className="row g-3">
                       {[
                         { mode: 'Text', desc: 'Standard interactive text chat console.', active: true },
-                        { mode: 'Voice', desc: 'Voice communication feedback. (Coming Soon)', active: false },
+                        { mode: 'Voice', desc: 'Real-time STT voice & vocal communication analysis.', active: true },
                         { mode: 'Video', desc: 'Face recognition and vocal grading. (Coming Soon)', active: false }
                       ].map((item, idx) => (
                         <div className="col-md-4" key={idx}>

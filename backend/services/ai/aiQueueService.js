@@ -8,13 +8,25 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 let processingJob = null;
 
-// Add job to sequential queue
+const recentlyCompletedJobs = new Set();
+
+// Add job to sequential queue with strict deduplication
 exports.addToQueue = (job) => {
-  // Prevent adding duplicate jobs for the same session and type (checking queue & active job)
-  const isDuplicate = queue.some(j => j.sessionId.toString() === job.sessionId.toString() && j.type === job.type) ||
-                     (processingJob && processingJob.sessionId.toString() === job.sessionId.toString() && processingJob.type === job.type);
-  if (isDuplicate) {
-    console.log(`[AI Queue] Ignored duplicate job: ${job.type} for session: ${job.sessionId}`);
+  if (!job || !job.type || !job.sessionId) return;
+
+  const jobKey = `${job.type}:${job.sessionId.toString()}`;
+
+  // 1. Check waiting queue
+  const inWaiting = queue.some(j => `${j.type}:${j.sessionId.toString()}` === jobKey);
+
+  // 2. Check active processing job
+  const inActive = processingJob && `${processingJob.type}:${processingJob.sessionId.toString()}` === jobKey;
+
+  // 3. Check completed recently
+  const inCompleted = recentlyCompletedJobs.has(jobKey);
+
+  if (inWaiting || inActive || inCompleted) {
+    console.log(`[AI Queue] Ignored duplicate queue request: ${jobKey}`);
     return;
   }
 
@@ -35,6 +47,7 @@ const triggerProcessor = async () => {
   while (queue.length > 0) {
     const job = queue.shift();
     processingJob = job;
+    const jobKey = `${job.type}:${job.sessionId.toString()}`;
     console.log(`[AI Queue] Processing job: ${job.type} for session: ${job.sessionId}. Remaining queue: ${queue.length}`);
     
     try {
@@ -42,6 +55,11 @@ const triggerProcessor = async () => {
         await executeQuestionGenerationJob(job);
       } else if (job.type === 'evaluate_session') {
         await executeEvaluationJob(job);
+      }
+      recentlyCompletedJobs.add(jobKey);
+      if (recentlyCompletedJobs.size > 1000) {
+        const firstKey = recentlyCompletedJobs.values().next().value;
+        recentlyCompletedJobs.delete(firstKey);
       }
     } catch (err) {
       console.error(`[AI Queue] Job failed: ${job.type} for session: ${job.sessionId}. Error:`, err);
@@ -64,6 +82,12 @@ const executeQuestionGenerationJob = async (job) => {
 
   const session = await InterviewSession.findById(sessionId);
   if (!session) return;
+
+  const existingQCount = await InterviewQuestion.countDocuments({ sessionId: session._id });
+  if (existingQCount > 0 && session.status !== 'Creating' && session.status !== 'Generating') {
+    console.log(`[AI Queue] [Session ${session.interviewId}] Questions already generated (${existingQCount} questions). Skipping duplicate job.`);
+    return;
+  }
 
   // Set status to Generating Questions
   session.status = 'Generating';

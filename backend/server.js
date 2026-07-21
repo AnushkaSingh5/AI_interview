@@ -12,6 +12,7 @@ const interviewRoutes = require('./routes/interviewRoutes');
 const errorHandler = require('./middleware/errorHandler');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const practiceRoutes = require('./routes/practiceRoutes');
+const voiceRoutes = require('./routes/voiceRoutes');
 const { apiLimiter } = require('./middleware/rateLimiter');
 
 // Initialize AI service early to enforce GEMINI_API_KEY presence validation on boot
@@ -70,6 +71,7 @@ app.use('/api/ai', aiRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/practice', practiceRoutes);
+app.use('/api/voice', voiceRoutes);
 app.use('/uploads', express.static(path.join(__dirname, './uploads')));
 
 // Centralized Error Handler Middleware (must be after routes)
