@@ -29,18 +29,6 @@ exports.createInterviewSession = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User profile not found' });
     }
 
-    // 1. Fetch resumeData to accurately verify profile completeness score
-    const resumeData = await ResumeData.findOne({ user: user._id });
-    const score = calculateCompletionScore(user, resumeData);
-
-    // 2. Validate Profile Completion & Resume Uploaded
-    if (score < 100 || !user.resumeId) {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot create interview without a 100% completed profile and uploaded resume.'
-      });
-    }
-
     const {
       interviewType,
       role,
@@ -51,15 +39,36 @@ exports.createInterviewSession = async (req, res, next) => {
       questionCount,
       preferredLanguage,
       focusAreas,
-      interviewMode
+      interviewMode,
+      selectedTopics,
+      hrTopics,
+      useResume,
+      useProjects,
+      useExperience,
+      questionDistribution
     } = req.body;
+
+    // 1. Validate Profile Completion & Resume Uploaded conditionally
+    const needsResume = interviewType === 'ResumeBased' || useResume === true || (interviewType === 'Mixed' && questionDistribution?.resume > 0);
+    if (needsResume) {
+      const resumeData = await ResumeData.findOne({ user: user._id });
+      const score = calculateCompletionScore(user, resumeData);
+      if (score < 100 || !user.resumeId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot create a resume-based interview without a 100% completed profile and uploaded resume.'
+        });
+      }
+    }
 
     // Generate unique short human-readable interview identifier
     const uniqueHash = crypto.randomBytes(3).toString('hex').toUpperCase();
     const interviewId = `INT-${uniqueHash}-${Date.now().toString().slice(-4)}`;
 
     // Build title (e.g. Technical Interview - Software Engineer)
-    const title = `${interviewType} Interview - ${role}`;
+    let displayType = interviewType;
+    if (interviewType === 'ResumeBased') displayType = 'Resume Based';
+    const title = `${displayType} Interview - ${role}`;
 
     const session = await InterviewSession.create({
       user: user._id,
@@ -74,6 +83,12 @@ exports.createInterviewSession = async (req, res, next) => {
       questionCount,
       preferredLanguage,
       focusAreas: focusAreas || [],
+      selectedTopics: selectedTopics || [],
+      hrTopics: hrTopics || [],
+      useResume: !!useResume,
+      useProjects: !!useProjects,
+      useExperience: !!useExperience,
+      questionDistribution: questionDistribution || {},
       interviewMode: interviewMode || 'Text',
       status: 'Created'
     });

@@ -52,8 +52,8 @@ router.post(
   '/create',
   [
     body('interviewType')
-      .isIn(['Technical', 'HR', 'Mixed'])
-      .withMessage('Interview type must be Technical, HR, or Mixed'),
+      .isIn(['Technical', 'HR', 'Mixed', 'ResumeBased', 'Custom'])
+      .withMessage('Interview type must be Technical, HR, Mixed, ResumeBased, or Custom'),
     body('role')
       .notEmpty()
       .withMessage('Job role cannot be empty')

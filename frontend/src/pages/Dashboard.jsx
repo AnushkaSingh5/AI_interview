@@ -138,7 +138,7 @@ const Dashboard = () => {
   const isEligibleForInterview = completion === 100 && isResumeDone;
 
   const handleStartInterview = () => {
-    navigate('/mock-interviews');
+    navigate('/interview/create');
   };
 
   const stats = [

@@ -148,11 +148,6 @@ const MockInterviews = () => {
   const isEligibleForInterview = readinessScore === 100 && isResumeDone;
 
   const handleStartInterview = () => {
-    if (!isEligibleForInterview) {
-      toast.warning('Complete your profile and upload your resume to start interviews.');
-      navigate('/dashboard');
-      return;
-    }
     navigate('/interview/create');
   };
 

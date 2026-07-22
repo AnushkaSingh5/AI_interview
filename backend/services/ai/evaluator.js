@@ -52,12 +52,17 @@ Expected Answer Guide: ${questionData.expectedAnswer || 'N/A'}
 
 --- EVALUATION GUIDELINES ---
 1. Score the answer from 0 to 10 based on Accuracy, Technical Depth, Completeness, Communication, and Confidence.
-2. If no answer is provided, set all score fields to 0, feedback to "No response provided", and empty array for missingPoints.
-3. Identify crucial missing concepts that were expected but not mentioned.
-4. Give actionable suggestions on how to improve the response.
-5. Write the ideal response they should have given.
-6. Return ONLY a valid JSON object. Do not include markdown code block fences (like \`\`\`json) or any conversational text.
-7. CRITICAL: Do NOT wrap the JSON inside markdown fences (like \`\`\`json ... \`\`\`). Do NOT include any intro or outro text. Return a clean JSON block starting with { and ending with }.
+2. Adapt your scoring focus based on the session's Interview Type:
+   - For ResumeBased: Prioritize evaluating project authenticity, listed architectural design choices, and technical depth of experience.
+   - For Technical: Prioritize evaluating technical correctness, domain concept understanding, trade-off explanation, and problem solving.
+   - For HR: Prioritize evaluating verbal confidence, communication structure, personality traits, and use of the STAR framework.
+   - For Mixed or Custom: Apply a balanced scoring combination of the above criteria.
+3. If no answer is provided, set all score fields to 0, feedback to "No response provided", and empty array for missingPoints.
+4. Identify crucial missing concepts that were expected but not mentioned.
+5. Give actionable suggestions on how to improve the response.
+6. Write the ideal response they should have given.
+7. Return ONLY a valid JSON object. Do not include markdown code block fences (like \`\`\`json) or any conversational text.
+8. CRITICAL: Do NOT wrap the JSON inside markdown fences (like \`\`\`json ... \`\`\`). Do NOT include any intro or outro text. Return a clean JSON block starting with { and ending with }.
 
 JSON Schema Output:
 {

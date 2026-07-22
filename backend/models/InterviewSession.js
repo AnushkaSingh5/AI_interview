@@ -18,7 +18,7 @@ const InterviewSessionSchema = new mongoose.Schema({
   interviewType: {
     type: String,
     required: true,
-    enum: ['Technical', 'HR', 'Mixed']
+    enum: ['Technical', 'HR', 'Mixed', 'ResumeBased', 'Custom']
   },
   role: {
     type: String,
@@ -57,6 +57,30 @@ const InterviewSessionSchema = new mongoose.Schema({
   focusAreas: {
     type: [String],
     default: []
+  },
+  selectedTopics: {
+    type: [String],
+    default: []
+  },
+  hrTopics: {
+    type: [String],
+    default: []
+  },
+  useResume: {
+    type: Boolean,
+    default: false
+  },
+  useProjects: {
+    type: Boolean,
+    default: false
+  },
+  useExperience: {
+    type: Boolean,
+    default: false
+  },
+  questionDistribution: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
   },
   interviewMode: {
     type: String,
