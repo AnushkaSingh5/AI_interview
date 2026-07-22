@@ -48,8 +48,11 @@ const VoiceSessionView = () => {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const pollIntervalRef = useRef(null);
+  const isFetchingRef = useRef(false);
+  const fetchedIdRef = useRef(null);
 
   useEffect(() => {
+    if (fetchedIdRef.current === id) return;
     fetchVoiceSession();
     return () => {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -58,6 +61,8 @@ const VoiceSessionView = () => {
   }, [id]);
 
   const fetchVoiceSession = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
     try {
       const response = await axiosInstance.get(`/voice/report/${id}`);
       if (response.data && response.data.success) {
@@ -76,6 +81,7 @@ const VoiceSessionView = () => {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
+          fetchedIdRef.current = id;
 
           const firstUnanswered = qList.findIndex(q => !q.editedTranscriptText && q.wordCount === 0);
           if (firstUnanswered !== -1) {
@@ -88,6 +94,7 @@ const VoiceSessionView = () => {
       toast.error('Failed to load voice interview session');
     } finally {
       setLoading(false);
+      isFetchingRef.current = false;
     }
   };
 

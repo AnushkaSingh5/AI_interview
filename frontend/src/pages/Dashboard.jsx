@@ -527,12 +527,14 @@ const Dashboard = () => {
                 No mock interviews configured yet.
               </div>
             ) : (
-              <div className="d-flex flex-column gap-3 mt-2 overflow-y-auto" style={{ maxHeight: '280px' }}>
+              <div className="d-flex flex-column gap-3 mt-2">
                 {interviews.slice(0, 5).map((item, idx) => {
                   let statusLabel = 'Ready';
                   let statusBadge = 'bg-success text-success bg-opacity-10';
                   let actionText = 'Start Interview';
-                  let actionUrl = `/interview/${item.interviewId}/active`;
+                  let actionUrl = item.interviewMode === 'Voice'
+                    ? `/voice-interview/session/${item.interviewId}`
+                    : `/interview/${item.interviewId}/active`;
 
                   if (item.status === 'Created') {
                     statusLabel = 'Created';
@@ -548,16 +550,23 @@ const Dashboard = () => {
                     statusLabel = 'In Progress';
                     statusBadge = 'bg-primary text-primary bg-opacity-10';
                     actionText = 'Resume';
+                    actionUrl = item.interviewMode === 'Voice'
+                      ? `/voice-interview/session/${item.interviewId}`
+                      : `/interview/${item.interviewId}/active`;
                   } else if (['Submitted', 'AwaitingEvaluation'].includes(item.status)) {
                     statusLabel = 'Submitted';
                     statusBadge = 'bg-info text-info bg-opacity-10';
                     actionText = 'Awaiting Evaluation';
-                    actionUrl = `/interview/${item.interviewId}/report`;
+                    actionUrl = item.interviewMode === 'Voice'
+                      ? `/voice-interview/report/${item.interviewId}`
+                      : `/interview/${item.interviewId}/report`;
                   } else if (item.status === 'Completed') {
                     statusLabel = 'Graded';
                     statusBadge = 'bg-success text-white px-2 py-0.5';
                     actionText = 'View Results';
-                    actionUrl = `/interview/${item.interviewId}/report`;
+                    actionUrl = item.interviewMode === 'Voice'
+                      ? `/voice-interview/report/${item.interviewId}`
+                      : `/interview/${item.interviewId}/report`;
                   }
 
                   const isGraded = item.status === 'Completed';
@@ -567,7 +576,7 @@ const Dashboard = () => {
                     <div key={idx} className="border rounded-3 p-3 bg-light bg-opacity-25 d-flex justify-content-between align-items-center">
                       <div className="text-start">
                         <strong className="text-dark d-block mb-1" style={{ fontSize: '0.86rem' }}>
-                          {item.role}
+                          {item.title || item.role}
                         </strong>
                         <div className="d-flex flex-wrap gap-1.5" style={{ fontSize: '0.74rem' }}>
                           <span className="badge bg-secondary bg-opacity-10 text-secondary">{item.difficulty}</span>

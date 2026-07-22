@@ -208,10 +208,24 @@ exports.getUserInterviews = async (req, res, next) => {
     const sessions = await InterviewSession.find({ user: req.user._id })
       .sort({ createdAt: -1 });
 
+    const VoiceInterview = require('../models/VoiceInterview');
+    const voiceInterviews = await VoiceInterview.find({ user: req.user._id });
+
+    const mappedSessions = sessions.map(s => {
+      const matchedVoice = voiceInterviews.find(v => v.sessionId === s.interviewId);
+      const isCompleted = s.status === 'Completed' || (matchedVoice && matchedVoice.status === 'Completed');
+
+      const doc = s.toObject();
+      if (isCompleted) {
+        doc.status = 'Completed';
+      }
+      return doc;
+    });
+
     res.status(200).json({
       success: true,
-      count: sessions.length,
-      sessions
+      count: mappedSessions.length,
+      sessions: mappedSessions
     });
   } catch (error) {
     next(error);

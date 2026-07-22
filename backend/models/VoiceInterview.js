@@ -84,6 +84,19 @@ const VoiceInterviewSchema = new mongoose.Schema({
   },
   grammarObservations: [{ type: String }],
   improvementSuggestions: [{ type: String }],
+  overallFeedback: { type: String, default: '' },
+  strengths: [{ type: String }],
+  focusGaps: [{ type: String }],
+  recommendations: [{ type: String }],
+  learningRoadmap: [{
+    priority: { type: String },
+    title: { type: String },
+    description: { type: String }
+  }],
+  skillHeatmap: [{
+    skill: { type: String },
+    stars: { type: Number, default: 4 }
+  }],
   status: {
     type: String,
     enum: ['InProgress', 'Completed'],

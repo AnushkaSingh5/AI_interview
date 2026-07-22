@@ -263,23 +263,52 @@ Return strictly a JSON object matching this schema:
 /**
  * 10. Voice Interview Overall Report Compilation
  */
-const compileVoiceReport = async (role, difficulty, evaluatedQuestions = []) => {
-  const prompt = `You are a senior interview analytics engine compiling a final Voice & Communication Report.
+const compileVoiceReport = async (role, difficulty, calculatedScores = {}, evaluatedQuestions = []) => {
+  const summaryList = evaluatedQuestions.map((q, idx) => ({
+    qNum: idx + 1,
+    question: q.questionText,
+    transcript: q.editedTranscriptText || q.transcriptText || 'No verbal answer provided',
+    score: q.score || 0,
+    feedback: q.feedback || 'Unanswered / Low score'
+  }));
+
+  const prompt = `You are a senior technical interviewer summarizing a completed Voice & Communication Interview Session.
 Target Role: "${role}"
 Difficulty: "${difficulty}"
-Questions & Candidate Transcripts: ${JSON.stringify(evaluatedQuestions.map(q => ({ question: q.questionText, score: q.score, wpm: q.speakingSpeedWpm, fillers: q.fillerWordsCount })))}
 
-Return strictly a JSON object with overall metrics:
+Candidate's Pre-Calculated Session Performance Metrics:
+- Overall Score: ${calculatedScores.overallScore || 0}%
+- Technical Score: ${calculatedScores.technicalScore || 0}%
+- Communication Score: ${calculatedScores.communicationScore || 0}%
+- Confidence Score: ${calculatedScores.confidenceScore || 0}%
+- Fluency Score: ${calculatedScores.fluencyScore || 0}%
+- Average WPM: ${calculatedScores.averageWpm || 0} WPM
+
+Question-by-Question Evaluations:
+${JSON.stringify(summaryList, null, 2)}
+
+Instructions:
+1. DO NOT GENERATE OR MODIFY THE NUMERICAL SCORES. The scores above are mathematical facts calculated directly from the individual question evaluations.
+2. If the scores are very low (e.g., candidate gave minimal answers, skipped questions, or scored poorly on questions), your narrative observations and suggestions MUST accurately reflect their weak verbal performance. Do NOT praise a candidate who scored poorly or did not answer questions.
+3. Return ONLY a valid JSON object matching this schema:
 {
-  "overallScore": 84,
-  "technicalScore": 85,
-  "communicationScore": 88,
-  "confidenceScore": 82,
-  "fluencyScore": 86,
-  "averageWpm": 135,
-  "speakingPace": "Optimal", // 'Slow', 'Optimal', 'Fast'
-  "grammarObservations": ["Observation 1", "Observation 2"],
-  "improvementSuggestions": ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+  "overallFeedback": "A comprehensive 2-3 sentence summary paragraph evaluating technical depth, articulation, and vocal delivery...",
+  "strengths": ["Top Strength 1", "Top Strength 2"],
+  "focusGaps": ["Focus Gap 1", "Focus Gap 2"],
+  "recommendations": ["Actionable Recommendation 1", "Actionable Recommendation 2"],
+  "grammarObservations": ["Vocal Observation 1", "Vocal Observation 2"],
+  "improvementSuggestions": ["Vocal Suggestion 1", "Vocal Suggestion 2"],
+  "learningRoadmap": [
+    { "priority": "PRIORITY 1", "title": "Key Skill/Topic 1", "description": "Actionable learning strategy..." },
+    { "priority": "PRIORITY 2", "title": "Key Skill/Topic 2", "description": "Actionable learning strategy..." },
+    { "priority": "PRIORITY 3", "title": "Key Skill/Topic 3", "description": "Actionable learning strategy..." }
+  ],
+  "skillHeatmap": [
+    { "skill": "Technical Core", "stars": 4 },
+    { "skill": "Vocal Delivery & Pace", "stars": 3 },
+    { "skill": "System Architecture", "stars": 4 },
+    { "skill": "Problem Solving & Clarity", "stars": 3 }
+  ]
 }`;
 
   return await executeWithRetry(

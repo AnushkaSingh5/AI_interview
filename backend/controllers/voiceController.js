@@ -102,9 +102,7 @@ const syncVoiceSessionQuestions = async (sessionCode, userId) => {
   });
 
   if (parentSession) {
-    console.log(`[Voice Sync] InterviewSession found: ${parentSession.interviewId}`);
     const questions = await InterviewQuestion.find({ sessionId: parentSession._id }).sort({ questionNumber: 1 });
-    console.log(`[Voice Sync] Questions count: ${questions.length}`);
 
     if (!voiceSession) {
       voiceSession = await VoiceInterview.create({
@@ -115,9 +113,7 @@ const syncVoiceSessionQuestions = async (sessionCode, userId) => {
         difficulty: parentSession.difficulty,
         questionCount: parentSession.questionCount || questions.length || 5
       });
-      console.log(`[Voice Sync] VoiceInterview found: ${voiceSession._id}`);
-    } else {
-      console.log(`[Voice Sync] VoiceInterview found: ${voiceSession._id}`);
+      console.log(`[Voice Sync] VoiceInterview created & loaded: ${voiceSession._id}`);
     }
 
     if (questions.length > 0 && voiceSession.questions.length === 0) {
@@ -135,12 +131,12 @@ const syncVoiceSessionQuestions = async (sessionCode, userId) => {
       console.log(`[Voice Sync] Questions copied: ${questions.length}`);
     }
 
-    console.log(`[Voice Sync] Voice session loaded: ${voiceSession._id}`);
+    console.log(`[Voice Sync] Voice session loaded: ${parentSession.interviewId} (${voiceSession.questions.length || questions.length} questions)`);
     return { parentSession, voiceSession, questionsCount: voiceSession.questions.length || questions.length };
   }
 
   if (voiceSession) {
-    console.log(`[Voice Sync] Voice session loaded: ${voiceSession._id}`);
+    console.log(`[Voice Sync] Voice session loaded: ${voiceSession.sessionId} (${voiceSession.questions.length} questions)`);
     return { parentSession: null, voiceSession, questionsCount: voiceSession.questions.length };
   }
 
@@ -357,50 +353,90 @@ exports.compileVoiceReport = async (req, res, next) => {
       }
 
       const questions = voiceSession.questions;
-      const answered = questions.filter(q => q.wordCount > 0);
+      const totalQuestionsCount = Math.max(1, questions.length);
 
+      // Compute strict mathematical scores across ALL questions in session (denominator = total session questions count)
+      const sumTech = questions.reduce((acc, q) => acc + (q.technicalScore !== undefined && q.technicalScore !== null ? q.technicalScore : (q.score ? q.score * 10 : 0)), 0);
+      const sumComm = questions.reduce((acc, q) => acc + (q.communicationScore !== undefined && q.communicationScore !== null ? q.communicationScore : (q.score ? q.score * 10 : 0)), 0);
+      const sumConf = questions.reduce((acc, q) => acc + (q.confidenceScore !== undefined && q.confidenceScore !== null ? q.confidenceScore : (q.score ? q.score * 10 : 0)), 0);
+      const sumFlu  = questions.reduce((acc, q) => acc + (q.fluencyScore !== undefined && q.fluencyScore !== null ? q.fluencyScore : (q.score ? q.score * 10 : 0)), 0);
+
+      const calculatedTechScore = Math.round(sumTech / totalQuestionsCount);
+      const calculatedCommScore = Math.round(sumComm / totalQuestionsCount);
+      const calculatedConfScore = Math.round(sumConf / totalQuestionsCount);
+      const calculatedFluScore  = Math.round(sumFlu / totalQuestionsCount);
+      const calculatedOverallScore = Math.round((calculatedTechScore * 0.5) + (calculatedCommScore * 0.5));
+
+      const answered = questions.filter(q => q.wordCount > 0);
       const totalWordCount = answered.reduce((acc, q) => acc + q.wordCount, 0);
       const totalDurationSec = answered.reduce((acc, q) => acc + q.audioDurationSec, 0);
-      const avgWpm = totalDurationSec > 0 ? Math.round((totalWordCount / totalDurationSec) * 60) : 130;
-
+      const avgWpm = totalDurationSec > 0 ? Math.round((totalWordCount / totalDurationSec) * 60) : (totalWordCount > 0 ? 120 : 0);
       const totalFillers = answered.reduce((acc, q) => acc + q.fillerWordsCount, 0);
 
-      const avgTech = answered.length > 0 ? Math.round(answered.reduce((acc, q) => acc + q.technicalScore, 0) / answered.length) : 75;
-      const avgComm = answered.length > 0 ? Math.round(answered.reduce((acc, q) => acc + q.communicationScore, 0) / answered.length) : 80;
-      const avgConf = answered.length > 0 ? Math.round(answered.reduce((acc, q) => acc + q.confidenceScore, 0) / answered.length) : 80;
-      const avgFlu = answered.length > 0 ? Math.round(answered.reduce((acc, q) => acc + q.fluencyScore, 0) / answered.length) : 80;
+      let speakingPace = 'Optimal';
+      if (avgWpm === 0) speakingPace = 'Silent';
+      else if (avgWpm < 100) speakingPace = 'Slow';
+      else if (avgWpm > 160) speakingPace = 'Fast';
+
+      const calculatedScores = {
+        overallScore: calculatedOverallScore,
+        technicalScore: calculatedTechScore,
+        communicationScore: calculatedCommScore,
+        confidenceScore: calculatedConfScore,
+        fluencyScore: calculatedFluScore,
+        averageWpm: avgWpm
+      };
 
       let reportAi = null;
       try {
-        reportAi = await aiService.compileVoiceReport(voiceSession.role, voiceSession.difficulty, answered);
+        reportAi = await aiService.compileVoiceReport(voiceSession.role, voiceSession.difficulty, calculatedScores, questions);
       } catch (err) {
         console.warn('[Voice AI] Report compilation fallback:', err.message);
       }
 
-      const overallScore = reportAi?.overallScore || Math.round((avgTech * 0.5) + (avgComm * 0.5));
+      let defaultObservations = ['Maintained clear spoken communication'];
+      let defaultSuggestions = [
+        'Pause for 1-2 seconds instead of using filler words.',
+        'Pace your verbal answers between 130-150 words per minute.',
+        'Elaborate technical answers with concrete examples.'
+      ];
 
-      let speakingPace = 'Optimal';
-      if (avgWpm < 100) speakingPace = 'Slow';
-      else if (avgWpm > 160) speakingPace = 'Fast';
+      if (calculatedOverallScore < 40) {
+        defaultObservations = ['Candidate provided very brief or incomplete verbal answers across questions.'];
+        defaultSuggestions = [
+          'Elaborate technical concepts thoroughly instead of providing short answers.',
+          'Practice structuring responses using the STAR method (Situation, Task, Action, Result).',
+          'Speak continuously into the microphone to build verbal fluency.'
+        ];
+      }
 
-      // ATOMIC UPDATE: Replace document.save() with findOneAndUpdate and $set
+      // ATOMIC UPDATE: Enforce exact mathematical scores in MongoDB
       const updatedSession = await VoiceInterview.findOneAndUpdate(
         { _id: voiceSession._id },
         {
           $set: {
-            overallScore,
-            technicalScore: reportAi?.technicalScore || avgTech,
-            communicationScore: reportAi?.communicationScore || avgComm,
-            confidenceScore: reportAi?.confidenceScore || avgConf,
-            fluencyScore: reportAi?.fluencyScore || avgFlu,
+            overallScore: calculatedOverallScore,
+            technicalScore: calculatedTechScore,
+            communicationScore: calculatedCommScore,
+            confidenceScore: calculatedConfScore,
+            fluencyScore: calculatedFluScore,
             averageWpm: avgWpm,
             totalFillerWords: totalFillers,
             speakingPace,
-            grammarObservations: reportAi?.grammarObservations || ['Strong vocal clarity', 'Maintained professional tone'],
-            improvementSuggestions: reportAi?.improvementSuggestions || [
-              'Pause for 1-2 seconds instead of using filler words.',
-              'Maintain an optimal speaking speed between 130-150 words per minute.',
-              'Elaborate technical responses with concrete real-world project examples.'
+            grammarObservations: reportAi?.grammarObservations || defaultObservations,
+            improvementSuggestions: reportAi?.improvementSuggestions || defaultSuggestions,
+            overallFeedback: reportAi?.overallFeedback || `Candidate demonstrated ${calculatedOverallScore >= 70 ? 'strong' : 'developing'} verbal responses across technical topics.`,
+            strengths: reportAi?.strengths || ['Clear vocal delivery', 'Direct answer attempt'],
+            focusGaps: reportAi?.focusGaps || ['Depth of technical explanation', 'Elaborating architectural trade-offs'],
+            recommendations: reportAi?.recommendations || ['Adopt STAR framework for structured verbal answers', 'Pause silently instead of using filler words'],
+            learningRoadmap: reportAi?.learningRoadmap || [
+              { priority: 'PRIORITY 1', title: 'System Architecture & Design Patterns', description: 'Practice describing end-to-end component flows and data trade-offs.' },
+              { priority: 'PRIORITY 2', title: 'Verbal Delivery & Pacing', description: 'Maintain a steady speaking speed of 130-150 WPM.' }
+            ],
+            skillHeatmap: reportAi?.skillHeatmap || [
+              { skill: 'Technical Core', stars: Math.max(1, Math.min(5, Math.round(calculatedTechScore / 20))) },
+              { skill: 'Vocal Delivery', stars: Math.max(1, Math.min(5, Math.round(calculatedCommScore / 20))) },
+              { skill: 'Confidence & Flow', stars: Math.max(1, Math.min(5, Math.round(calculatedConfScore / 20))) }
             ],
             status: 'Completed',
             completedAt: new Date()
@@ -409,7 +445,7 @@ exports.compileVoiceReport = async (req, res, next) => {
         { new: true }
       );
 
-      // Sync parent InterviewSession status to Completed
+      // Sync parent InterviewSession status and overallScore to Completed
       const isMongoId = mongoose.Types.ObjectId.isValid(sessionId) && String(new mongoose.Types.ObjectId(sessionId)) === String(sessionId);
       await InterviewSession.updateOne(
         {
@@ -424,6 +460,7 @@ exports.compileVoiceReport = async (req, res, next) => {
           $set: {
             status: 'Completed',
             progress: 100,
+            overallScore: calculatedOverallScore,
             completedAt: new Date()
           }
         }
