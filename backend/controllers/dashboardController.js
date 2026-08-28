@@ -179,16 +179,27 @@ exports.getInterviewHistory = async (req, res, next) => {
       .limit(limitNum);
 
     const VoiceInterview = require('../models/VoiceInterview');
+    const VideoInterview = require('../models/VideoInterview');
     const sessionIds = sessions.map(s => s._id);
     const evaluations = await InterviewEvaluation.find({ sessionId: { $in: sessionIds } });
     const voiceInterviews = await VoiceInterview.find({ user: userId });
+    const videoInterviews = await VideoInterview.find({ user: userId });
 
     const history = sessions.map(s => {
       const matchedEval = evaluations.find(e => e.sessionId.toString() === s._id.toString());
       const matchedVoice = voiceInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
+      const matchedVideo = videoInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
 
-      const isCompleted = s.status === 'Completed' || (matchedVoice && matchedVoice.status === 'Completed');
-      const score = matchedEval ? matchedEval.overallScore : (matchedVoice ? matchedVoice.overallScore : null);
+      const isCompleted = s.status === 'Completed' || 
+                          (matchedVoice && matchedVoice.status === 'Completed') || 
+                          (matchedVideo && matchedVideo.status === 'Completed');
+      const score = matchedEval ? matchedEval.overallScore : 
+                    (matchedVoice ? matchedVoice.overallScore : 
+                    (matchedVideo ? matchedVideo.overallScore : null));
+
+      const finalStatus = isCompleted ? 'Completed' : s.status;
+
+      console.log(`[History] Interview type: ${s.interviewMode || 'Text'}, Status: ${finalStatus}, MongoDB _id: ${s._id}, Custom sessionId: ${s.interviewId}`);
 
       return {
         _id: s._id,
@@ -200,8 +211,8 @@ exports.getInterviewHistory = async (req, res, next) => {
         interviewType: s.interviewType,
         interviewMode: s.interviewMode || 'Text',
         questionCount: s.questionCount,
-        status: isCompleted ? 'Completed' : s.status,
-        completedAt: s.completedAt || (matchedVoice ? matchedVoice.completedAt : null) || s.submittedAt || s.updatedAt,
+        status: finalStatus,
+        completedAt: s.completedAt || (matchedVoice ? matchedVoice.completedAt : null) || (matchedVideo ? matchedVideo.completedAt : null) || s.submittedAt || s.updatedAt,
         overallScore: score
       };
     });
@@ -534,21 +545,67 @@ exports.compareInterviews = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'One or both interview sessions not found' });
     }
 
-    const evalA = await InterviewEvaluation.findOne({ sessionId: sessionA._id });
-    const evalB = await InterviewEvaluation.findOne({ sessionId: sessionB._id });
+    const VoiceInterview = require('../models/VoiceInterview');
+
+    // 1. Fetch or simulate Evaluation for Session A
+    let evalA = await InterviewEvaluation.findOne({ sessionId: sessionA._id });
+    let voiceA = null;
+    if (!evalA) {
+      voiceA = await VoiceInterview.findOne({ sessionId: sessionA.interviewId, status: 'Completed' });
+      if (voiceA) {
+        evalA = {
+          overallScore: voiceA.overallScore,
+          technicalScore: voiceA.technicalScore,
+          hrScore: voiceA.communicationScore,
+          communicationScore: voiceA.communicationScore,
+          confidenceScore: voiceA.confidenceScore
+        };
+      }
+    }
+
+    // 2. Fetch or simulate Evaluation for Session B
+    let evalB = await InterviewEvaluation.findOne({ sessionId: sessionB._id });
+    let voiceB = null;
+    if (!evalB) {
+      voiceB = await VoiceInterview.findOne({ sessionId: sessionB.interviewId, status: 'Completed' });
+      if (voiceB) {
+        evalB = {
+          overallScore: voiceB.overallScore,
+          technicalScore: voiceB.technicalScore,
+          hrScore: voiceB.communicationScore,
+          communicationScore: voiceB.communicationScore,
+          confidenceScore: voiceB.confidenceScore
+        };
+      }
+    }
 
     if (!evalA || !evalB) {
       return res.status(400).json({ success: false, message: 'Evaluation reports not ready yet for comparison' });
     }
 
-    const answersA = await InterviewAnswer.find({ sessionId: sessionA._id });
-    const answersB = await InterviewAnswer.find({ sessionId: sessionB._id });
+    // 3. Calculate metrics for Session A
+    let totalTimeA = 0;
+    let skippedA = 0;
+    if (voiceA) {
+      totalTimeA = voiceA.questions.reduce((sum, q) => sum + (q.audioDurationSec || 0), 0);
+      skippedA = voiceA.questions.filter(q => !q.transcriptText || q.transcriptText.trim().length === 0).length;
+    } else {
+      const answersA = await InterviewAnswer.find({ sessionId: sessionA._id });
+      totalTimeA = answersA.reduce((sum, a) => sum + (a.timeTaken || 0), 0);
+      skippedA = answersA.filter(a => a.skipped).length;
+    }
 
-    const totalTimeA = answersA.reduce((sum, a) => sum + (a.timeTaken || 0), 0);
-    const totalTimeB = answersB.reduce((sum, a) => sum + (a.timeTaken || 0), 0);
-
-    const skippedA = answersA.filter(a => a.skipped).length;
-    const skippedB = answersB.filter(a => a.skipped).length;
+    // 4. Calculate metrics for Session B
+    let totalTimeB = 0;
+    let skippedB = 0;
+    if (voiceB) {
+      totalTimeB = voiceB.questions.reduce((sum, q) => sum + (q.audioDurationSec || 0), 0);
+      skippedB = voiceB.questions.filter(q => !q.transcriptText || q.transcriptText.trim().length === 0).length;
+    } else {
+      const answersB = await InterviewAnswer.find({ sessionId: sessionB._id });
+      totalTimeB = answersB.reduce((sum, a) => sum + (a.timeTaken || 0), 0);
+      skippedB = answersB.filter(a => a.skipped).length;
+    }
 
     res.status(200).json({
       success: true,

@@ -2,7 +2,7 @@
  * Prompt Builder utility to construct structured AI interview generation prompts
  */
 
-exports.buildQuestionPrompt = (user, resumeData, session) => {
+exports.buildQuestionPrompt = (user, resumeData, session, adaptiveContext = null) => {
   const {
     interviewType,
     role,
@@ -45,6 +45,20 @@ exports.buildQuestionPrompt = (user, resumeData, session) => {
   ).join('\n');
 
   // Base prompt header & instructions
+  let adaptiveInstruction = '';
+  if (difficulty === 'Adaptive' && adaptiveContext) {
+    const weakList = adaptiveContext.weakTopics || [];
+    const incorrectList = adaptiveContext.incorrectQuestions || [];
+    adaptiveInstruction = `
+--- ADAPTIVE MODE ACTIVE ---
+Generate an Adaptive Interview. You MUST construct the ${questionCount} questions following this distribution:
+- 40% of the questions should target these weak topics: ${weakList.join(', ') || 'General Concepts'}
+- 40% of the questions should be variants/follow-ups of these previously incorrect questions:
+  ${incorrectList.map(q => `- ${q}`).join('\n') || 'None'}
+- 20% of the questions should be random general questions relevant to target role "${role}".
+`;
+  }
+
   const baseHeader = `You are an expert technical interviewer at a premium tech corporation (e.g. ${company || 'Google'}). 
 Generate a personalized set of exactly ${questionCount} interview questions for a candidate.
 Target Role: "${role}"
@@ -52,6 +66,7 @@ Experience Level: "${experienceLevel}"
 Difficulty: "${difficulty}"
 Preferred Language: "${preferredLanguage}"
 Total Questions Required: ${questionCount}
+${adaptiveInstruction}
 `;
 
   const outputSchemaInstruction = `

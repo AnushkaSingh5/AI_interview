@@ -340,6 +340,8 @@ const InterviewHistory = () => {
                               onClick={() => {
                                 if (item.interviewMode === 'Voice') {
                                   navigate(`/voice-interview/report/${item.interviewId}`);
+                                } else if (item.interviewMode === 'Video') {
+                                  navigate(`/video-interview/report/${item.interviewId}`);
                                 } else {
                                   navigate(`/interview/${item.interviewId}/report`);
                                 }
@@ -369,6 +371,8 @@ const InterviewHistory = () => {
                             onClick={() => {
                               if (item.interviewMode === 'Voice') {
                                 navigate(`/voice-interview/session/${item.interviewId}`);
+                              } else if (item.interviewMode === 'Video') {
+                                navigate(`/video-interview/session/${item.interviewId}`);
                               } else {
                                 navigate(`/interview/${item.interviewId}/active`);
                               }

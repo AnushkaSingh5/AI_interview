@@ -261,6 +261,13 @@ const executeEvaluationJob = async (job) => {
     session.status = 'Completed';
     await session.save();
     console.log(`[AI Queue] [Session ${session.interviewId}] AI Evaluation completed successfully.`);
+
+    try {
+      const learningController = require('../../controllers/learningController');
+      await learningController.updateProfile(session.user);
+    } catch (learnErr) {
+      console.error(`[AI Queue] [Session ${session.interviewId}] Failed to update learning profile:`, learnErr.message);
+    }
   } catch (err) {
     console.error(`[AI Queue] [Session ${session.interviewId}] Evaluation Failed:`, err);
     session.status = 'AwaitingEvaluation'; // Revert back

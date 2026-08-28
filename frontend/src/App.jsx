@@ -35,6 +35,9 @@ import PracticeSessionView from './pages/PracticeSessionView';
 import VoiceCheck from './pages/VoiceCheck';
 import VoiceSessionView from './pages/VoiceSessionView';
 import VoiceReportView from './pages/VoiceReportView';
+import VideoCheck from './pages/VideoCheck';
+import VideoSessionView from './pages/VideoSessionView';
+import VideoReportView from './pages/VideoReportView';
 
 function App() {
   return (
@@ -90,6 +93,10 @@ function App() {
               <Route path="/voice-interview/check" element={<VoiceCheck />} />
               <Route path="/voice-interview/session/:id" element={<VoiceSessionView />} />
               <Route path="/voice-interview/report/:id" element={<VoiceReportView />} />
+              <Route path="/video-interview/check" element={<VideoCheck />} />
+              <Route path="/video-interview/session" element={<VideoSessionView />} />
+              <Route path="/video-interview/session/:id" element={<VideoSessionView />} />
+              <Route path="/video-interview/report/:id" element={<VideoReportView />} />
             </Route>
           </Route>
 

@@ -146,6 +146,8 @@ const InterviewQuestionsReview = () => {
         toast.success('Interview started successfully!');
         if (session?.interviewMode === 'Voice') {
           navigate(`/voice-interview/check?sessionId=${session.interviewId}`);
+        } else if (session?.interviewMode === 'Video') {
+          navigate(`/video-interview/check?sessionId=${session.interviewId}`);
         } else {
           navigate(`/interview/${session.interviewId}/active`);
         }

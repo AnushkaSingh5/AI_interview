@@ -449,8 +449,8 @@ const MockInterviews = () => {
                       )}
                     </td>
                     <td>
-                      <span className={`badge rounded-pill px-2.5 py-1 ${item.status === 'Completed' ? 'bg-success text-success bg-opacity-10' : item.status === 'InProgress' ? 'bg-primary text-primary bg-opacity-10' : 'bg-info text-info bg-opacity-10'}`}>
-                        {item.status === 'Completed' ? 'Graded' : item.status === 'InProgress' ? 'In Progress' : 'Evaluating'}
+                      <span className={`badge rounded-pill px-2.5 py-1 ${item.status === 'Completed' ? 'bg-success text-success bg-opacity-10' : ['InProgress', 'Created', 'ReadyToStart', 'Ready', 'InstructionsViewed'].includes(item.status) ? 'bg-primary text-primary bg-opacity-10' : 'bg-info text-info bg-opacity-10'}`}>
+                        {item.status === 'Completed' ? 'Graded' : ['InProgress', 'Created', 'ReadyToStart', 'Ready', 'InstructionsViewed'].includes(item.status) ? 'In Progress' : 'Evaluating'}
                       </span>
                     </td>
                     <td className="text-end">
@@ -461,6 +461,8 @@ const MockInterviews = () => {
                               onClick={() => {
                                 if (item.interviewMode === 'Voice') {
                                   navigate(`/voice-interview/report/${item.interviewId}`);
+                                } else if (item.interviewMode === 'Video') {
+                                  navigate(`/video-interview/report/${item.interviewId}`);
                                 } else {
                                   navigate(`/interview/${item.interviewId}/report`);
                                 }
@@ -485,11 +487,15 @@ const MockInterviews = () => {
                               <FiDownload />
                             </button>
                           </>
+                        ) : ['Submitted', 'AwaitingEvaluation', 'Evaluating'].includes(item.status) ? (
+                          <span className="text-muted small px-2 fw-semibold" style={{ fontSize: '0.74rem' }}>Evaluating...</span>
                         ) : (
                           <button
                             onClick={() => {
                               if (item.interviewMode === 'Voice') {
                                 navigate(`/voice-interview/session/${item.interviewId}`);
+                              } else if (item.interviewMode === 'Video') {
+                                navigate(`/video-interview/session/${item.interviewId}`);
                               } else {
                                 navigate(`/interview/${item.interviewId}/active`);
                               }

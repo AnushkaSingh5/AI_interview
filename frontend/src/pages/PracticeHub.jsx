@@ -32,6 +32,7 @@ const PracticeHub = () => {
   const [configDifficulty, setConfigDifficulty] = useState('Medium');
   const [configCount, setConfigCount] = useState(5);
   const [startingSession, setStartingSession] = useState(false);
+  const [learningProfile, setLearningProfile] = useState(null);
 
   useEffect(() => {
     fetchHubData();
@@ -53,6 +54,15 @@ const PracticeHub = () => {
       if (roadRes.data.success) setRoadmap(roadRes.data.roadmap);
       if (fcRes.data.success) setFlashcards(fcRes.data.flashcards || []);
       if (bmRes.data.success) setBookmarks(bmRes.data.bookmarks || []);
+      
+      try {
+        const learnRes = await axiosInstance.get('/learning/profile');
+        if (learnRes.data.success) {
+          setLearningProfile(learnRes.data.profile);
+        }
+      } catch (e) {
+        console.warn('Learning profile fetch failed:', e.message);
+      }
     } catch (error) {
       console.error('Error fetching Practice Hub data:', error);
       toast.error('Failed to load practice hub data');
@@ -181,6 +191,36 @@ const PracticeHub = () => {
           </div>
         </div>
       </div>
+
+      {/* Today's Practice Recommendation Card */}
+      {learningProfile && learningProfile.weakestTopics && learningProfile.weakestTopics.length > 0 && (
+        <div className="glass-panel p-4 bg-white mb-4 text-start animate-fade-in" style={{ border: '1px solid var(--border-grey)' }}>
+          <div className="d-flex align-items-center justify-content-between flex-wrap gap-3">
+            <div className="d-flex align-items-center gap-3">
+              <span className="p-2.5 bg-primary bg-opacity-10 text-primary rounded-circle" style={{ backgroundColor: 'var(--primary-purple-light)', color: 'var(--primary-purple)' }}>
+                <FiTarget style={{ fontSize: '1.4rem' }} />
+              </span>
+              <div>
+                <span className="badge bg-danger bg-opacity-10 text-danger fw-bold px-2 py-0.5 mb-1" style={{ fontSize: '0.68rem' }}>TODAY'S TARGETED PRACTICE</span>
+                <h3 className="h5 fw-bold text-dark mb-1">
+                  Today's Recommended Practice: {learningProfile.weakestTopics[0].topic}
+                </h3>
+                <p className="text-muted small mb-0">
+                  Focus on your most recurring weak area to eliminate coding gaps. Generates **10 custom practice questions** at a **Medium** difficulty level.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => handleStartCustomPractice('Technical', learningProfile.weakestTopics[0].topic)}
+              disabled={startingSession}
+              className="btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white"
+            >
+              <FiPlay style={{ fill: 'white' }} />
+              <span>Start Targeted Practice</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Practice Categories Cards Grid */}
       <h3 className="h6 fw-bold text-dark mb-3">Practice Categories</h3>

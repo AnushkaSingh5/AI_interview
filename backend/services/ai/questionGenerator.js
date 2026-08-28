@@ -121,8 +121,29 @@ exports.generateInterviewQuestions = async (user, resumeData, session) => {
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-  // 1. Build prompt
-  const prompt = buildQuestionPrompt(user, resumeData, session);
+  // 1. Fetch adaptive context if difficulty is Adaptive
+  let adaptiveContext = null;
+  if (session.difficulty === 'Adaptive') {
+    try {
+      const UserLearningProfile = require('../../models/UserLearningProfile');
+      const QuestionEvaluation = require('../../models/QuestionEvaluation');
+      
+      const profile = await UserLearningProfile.findOne({ user: user._id });
+      const lowEvals = await QuestionEvaluation.find({
+        score: { $lt: 6 }
+      }).limit(10).populate('questionId');
+
+      adaptiveContext = {
+        weakTopics: profile?.weakestTopics?.map(t => t.topic) || [],
+        incorrectQuestions: lowEvals.filter(e => e.questionId).map(e => e.questionId.question) || []
+      };
+    } catch (e) {
+      console.error('[AI Service] Failed to retrieve adaptive context:', e.message);
+    }
+  }
+
+  // 2. Build prompt
+  const prompt = buildQuestionPrompt(user, resumeData, session, adaptiveContext);
 
   const requestFn = async (attempt) => {
     console.log(`[AI Service] Generating questions. Attempt ${attempt}...`);

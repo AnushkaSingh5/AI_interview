@@ -671,12 +671,13 @@ const InterviewCreate = () => {
                       <div className="row g-3">
                         {[
                           { mode: 'Text', desc: 'Standard interactive text chat console.', active: true },
-                          { mode: 'Voice', desc: 'Real-time STT voice & vocal communication analysis.', active: true }
+                          { mode: 'Voice', desc: 'Real-time STT voice & vocal communication analysis.', active: true },
+                          { mode: 'Video', desc: 'Webcam video mock interview with live non-verbal & speech grading.', active: true }
                         ].map((item, idx) => (
-                          <div className="col-md-6" key={idx}>
+                          <div className="col-md-4" key={idx}>
                             <div 
                               onClick={() => setFormData(prev => ({ ...prev, interviewMode: item.mode }))}
-                              className={`border rounded-3 p-3 cursor-pointer transition-all ${
+                              className={`border rounded-3 p-3 cursor-pointer h-100 transition-all ${
                                 formData.interviewMode === item.mode ? 'border-primary bg-light bg-opacity-25' : 'border-secondary-subtle'
                               }`}
                               style={{ cursor: 'pointer' }}

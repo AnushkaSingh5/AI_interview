@@ -22,6 +22,7 @@ const PerformanceDashboard = () => {
   const [strongSkills, setStrongSkills] = useState([]);
   const [streakData, setStreakData] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
+  const [learningProfile, setLearningProfile] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -30,12 +31,13 @@ const PerformanceDashboard = () => {
   const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      const [sumRes, analRes, skillRes, streakRes, recRes] = await Promise.all([
+      const [sumRes, analRes, skillRes, streakRes, recRes, learnRes] = await Promise.all([
         axiosInstance.get('/dashboard/summary'),
         axiosInstance.get('/dashboard/analytics'),
         axiosInstance.get('/dashboard/skills'),
         axiosInstance.get('/dashboard/streak'),
-        axiosInstance.get('/dashboard/recommendations')
+        axiosInstance.get('/dashboard/recommendations'),
+        axiosInstance.get('/learning/profile')
       ]);
 
       if (sumRes.data.success) setSummary(sumRes.data.summary);
@@ -47,6 +49,7 @@ const PerformanceDashboard = () => {
       }
       if (streakRes.data.success) setStreakData(streakRes.data);
       if (recRes.data.success) setRecommendations(recRes.data.recommendations);
+      if (learnRes.data.success) setLearningProfile(learnRes.data.profile);
 
     } catch (error) {
       console.error('Error fetching dashboard analytics:', error);
@@ -365,6 +368,125 @@ const PerformanceDashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* AI Learning Coach & Personalized Mentor */}
+      {learningProfile && (
+        <div className="row g-4 mb-4 animate-fade-in">
+          {/* Left Column: AI Trend Analysis & Weekly Plan */}
+          <div className="col-lg-6">
+            <div className="glass-panel p-4 bg-white border shadow-sm h-100">
+              <h3 className="h6 fw-bold text-dark mb-4 d-flex align-items-center gap-2 border-bottom pb-2">
+                <FiZap className="text-primary" /> AI Trend Analysis
+              </h3>
+              
+              <div className="row g-3 mb-4">
+                {learningProfile.improvementTrend && learningProfile.improvementTrend.length > 0 ? (
+                  learningProfile.improvementTrend.map((trend, idx) => {
+                    const isUp = trend.changePercent >= 0;
+                    return (
+                      <div className="col-6 col-sm-4" key={idx}>
+                        <div className="p-3 border rounded-3 bg-light bg-opacity-50 text-center">
+                          <span className="text-muted small fw-semibold d-block mb-1" style={{ fontSize: '0.7rem' }}>{trend.category}</span>
+                          <strong className={`h6 fw-bold d-block ${isUp ? 'text-success' : 'text-danger'}`}>
+                            {isUp ? '⬆' : '⬇'} {isUp ? '+' : ''}{trend.changePercent}%
+                          </strong>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="col-12 py-3 text-center text-muted small">
+                    Complete mock interviews to generate trend analytics.
+                  </div>
+                )}
+              </div>
+
+              <h3 className="h6 fw-bold text-dark mb-3 border-bottom pb-2">
+                📅 Weekly Study Plan
+              </h3>
+              <div className="d-flex flex-column gap-2">
+                {learningProfile.weeklyStudyPlan && learningProfile.weeklyStudyPlan.length > 0 ? (
+                  learningProfile.weeklyStudyPlan.map((dayPlan, idx) => (
+                    <div key={idx} className="d-flex justify-content-between align-items-center p-2.5 border rounded-3 bg-light bg-opacity-25" style={{ fontSize: '0.8rem' }}>
+                      <span className="fw-bold text-primary" style={{ color: 'var(--primary-purple)', width: '80px' }}>{dayPlan.day}</span>
+                      <span className="text-dark fw-semibold flex-grow-1 text-start ms-2">{dayPlan.topic}</span>
+                      <span className="badge bg-secondary bg-opacity-10 text-secondary">{dayPlan.timeEstimate}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-3 text-center text-muted small">
+                    Study roadmap calendar will compile automatically.
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column: Priority Recommendations & Insights */}
+          <div className="col-lg-6">
+            <div className="glass-panel p-4 bg-white border shadow-sm h-100">
+              <h3 className="h6 fw-bold text-dark mb-4 d-flex align-items-center gap-2 border-bottom pb-2">
+                <FiSliders className="text-success" /> Priority Study Topics
+              </h3>
+              
+              <div className="d-flex flex-column gap-3 mb-4">
+                {learningProfile.recommendations && learningProfile.recommendations.length > 0 ? (
+                  learningProfile.recommendations.slice(0, 4).map((rec, idx) => {
+                    const badgeColors = {
+                      Critical: 'bg-danger text-danger',
+                      High: 'bg-warning text-warning',
+                      Medium: 'bg-primary text-primary',
+                      Low: 'bg-secondary text-secondary'
+                    };
+                    const colorClass = badgeColors[rec.priority] || 'bg-secondary text-secondary';
+                    
+                    return (
+                      <div key={idx} className="border rounded-3 p-3 bg-light bg-opacity-25 text-start">
+                        <div className="d-flex justify-content-between align-items-center mb-1.5">
+                          <strong className="text-dark small">{rec.topic}</strong>
+                          <span className={`badge ${colorClass} bg-opacity-10`} style={{ fontSize: '0.68rem' }}>
+                            {rec.priority}
+                          </span>
+                        </div>
+                        <p className="text-muted small mb-2" style={{ fontSize: '0.74rem', lineHeight: '1.3' }}>
+                          {rec.recommendationText}
+                        </p>
+                        <div className="d-flex flex-wrap gap-1">
+                          {rec.practiceExercises?.map((ex, i) => (
+                            <span key={i} className="badge bg-light border text-muted" style={{ fontSize: '0.66rem' }}>
+                              ⚡ {ex}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="mt-2 text-end">
+                          <span className="text-muted" style={{ fontSize: '0.66rem' }}>Estimated: {rec.estimatedStudyTimeHours} Hours</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-4 text-center text-muted small">
+                    Take a mock interview to generate roadmap recommendation cards.
+                  </div>
+                )}
+              </div>
+
+              <h3 className="h6 fw-bold text-dark mb-3 border-bottom pb-2">
+                💡 Learning Insights
+              </h3>
+              <ul className="text-muted small mb-0 ps-3 text-start d-flex flex-column gap-2" style={{ fontSize: '0.76rem' }}>
+                {learningProfile.learningInsights && learningProfile.learningInsights.length > 0 ? (
+                  learningProfile.learningInsights.map((insight, idx) => (
+                    <li key={idx}>{insight}</li>
+                  ))
+                ) : (
+                  <li className="list-unstyled text-center text-muted py-2">Insights will appear here as the AI analyzes your answers.</li>
+                )}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dynamic Streak & Achievements Grid Card */}
       <div className="glass-panel p-4 bg-white border shadow-sm mb-4">

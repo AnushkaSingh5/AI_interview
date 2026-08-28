@@ -466,6 +466,13 @@ exports.compileVoiceReport = async (req, res, next) => {
         }
       );
 
+      try {
+        const learningController = require('./learningController');
+        await learningController.updateProfile(req.user._id);
+      } catch (learnErr) {
+        console.error('[Voice Controller] Failed to update learning profile:', learnErr.message);
+      }
+
       res.status(200).json({
         success: true,
         report: updatedSession
@@ -487,6 +494,17 @@ exports.getVoiceReport = async (req, res, next) => {
     }
 
     const { parentSession, voiceSession, questionsCount } = await syncVoiceSessionQuestions(sessionParam, req.user._id);
+
+    const isMongoId = mongoose.Types.ObjectId.isValid(sessionParam) && String(new mongoose.Types.ObjectId(sessionParam)) === String(sessionParam);
+    if (voiceSession && voiceSession.status === 'Completed') {
+      console.log(`[Report] Received ID: ${sessionParam}`);
+      console.log(`[Report] Resolved session: ${voiceSession.sessionId}`);
+    } else {
+      console.log(`[Resume] Received ID: ${sessionParam}`);
+      console.log(`[Resume] ID type: ${isMongoId ? 'MongoDB ObjectId' : 'Custom sessionId'}`);
+      console.log(`[Resume] Resolved InterviewSession: ${parentSession ? parentSession.interviewId : 'null'}`);
+      console.log(`[Resume] Resolved VoiceInterview: ${voiceSession ? voiceSession.sessionId : 'null'}`);
+    }
 
     if (!voiceSession) {
       return res.status(404).json({ success: false, message: 'Voice interview session not found' });

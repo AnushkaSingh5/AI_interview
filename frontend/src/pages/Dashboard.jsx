@@ -2,9 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
-  FiPlay, FiChevronDown, FiCalendar, FiUser, FiUploadCloud, 
+  FiPlay, FiChevronDown, FiCalendar, FiUser, FiUploadCloud, FiCamera,
   FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink,
-  FiBookOpen, FiClock, FiGrid
+  FiBookOpen, FiClock, FiGrid, FiZap
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -23,6 +23,8 @@ const Dashboard = () => {
   const [interviews, setInterviews] = useState([]);
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [videoHistory, setVideoHistory] = useState([]);
+  const [learningProfile, setLearningProfile] = useState(null);
 
   useEffect(() => {
     fetchDashboardData();
@@ -68,6 +70,24 @@ const Dashboard = () => {
         if (analRes.data.success) setAnalytics(analRes.data);
       } catch (e) {
         console.warn('Mini-analytics fetch failed:', e.message);
+      }
+
+      try {
+        const learnRes = await axiosInstance.get('/learning/profile');
+        if (learnRes.data.success) {
+          setLearningProfile(learnRes.data.profile);
+        }
+      } catch (e) {
+        console.warn('Learning profile fetch failed:', e.message);
+      }
+
+      try {
+        const videoRes = await axiosInstance.get('/video/history');
+        if (videoRes.data.success) {
+          setVideoHistory(videoRes.data.history || []);
+        }
+      } catch (e) {
+        console.warn('Video history fetch failed:', e.message);
       }
     } catch (error) {
       console.error('Error fetching dashboard details:', error);
@@ -194,11 +214,9 @@ const Dashboard = () => {
         <div>
           <button 
             onClick={handleStartInterview} 
-            disabled={!isEligibleForInterview}
-            className={`btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm ${!isEligibleForInterview ? 'opacity-50' : ''}`}
-            style={{ cursor: !isEligibleForInterview ? 'not-allowed' : 'pointer' }}
+            className="btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm"
           >
-            <FiPlay style={{ fill: !isEligibleForInterview ? 'transparent' : 'white' }} />
+            <FiPlay style={{ fill: 'white' }} />
             <span>Start Mock Interview</span>
           </button>
         </div>
@@ -402,6 +420,181 @@ const Dashboard = () => {
             </div>
           </div>
           
+        </div>
+      </div>
+
+      {/* AI Learning Coach Widget */}
+      {learningProfile && (
+        <div className="glass-panel p-4 bg-white mb-5 text-start" style={{ border: '1px solid var(--border-grey)' }}>
+          <div className="d-flex align-items-center gap-2 mb-3">
+            <span className="p-2 bg-primary bg-opacity-10 text-primary rounded-circle" style={{ backgroundColor: 'var(--primary-purple-light)', color: 'var(--primary-purple)' }}>
+              <FiZap style={{ fontSize: '1.2rem', strokeWidth: '2.5px' }} />
+            </span>
+            <div>
+              <h4 className="h5 fw-bold text-dark mb-0.5">AI Learning Coach</h4>
+              <p className="text-muted small mb-0">Personalized insight recommendations to accelerate your preparation.</p>
+            </div>
+          </div>
+          
+          <div className="row g-4">
+            <div className="col-md-4">
+              <div className="border rounded-3 p-3 bg-light bg-opacity-50 h-100">
+                <span className="text-muted small fw-bold d-block mb-2">Weakest Topics</span>
+                {learningProfile.weakestTopics && learningProfile.weakestTopics.length > 0 ? (
+                  <div className="d-flex flex-column gap-1.5">
+                    {learningProfile.weakestTopics.slice(0, 3).map((wt, i) => (
+                      <div key={i} className="d-flex justify-content-between align-items-center">
+                        <span className="fw-semibold text-dark small">{wt.topic}</span>
+                        <span className="badge bg-danger bg-opacity-10 text-danger" style={{ fontSize: '0.68rem' }}>{wt.averageScore}%</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-muted small">No weak topics detected yet! Complete more interviews.</span>
+                )}
+              </div>
+            </div>
+
+            <div className="col-md-4">
+              <div className="border rounded-3 p-3 bg-light bg-opacity-50 h-100 d-flex flex-column justify-content-between">
+                <div>
+                  <span className="text-muted small fw-bold d-block mb-1">Recommended Today</span>
+                  <strong className="text-dark d-block mb-1" style={{ fontSize: '0.92rem' }}>
+                    {learningProfile.recommendations?.[0]?.topic || 'General Practice'}
+                  </strong>
+                  <p className="text-muted small mb-0" style={{ fontSize: '0.74rem', lineHeight: '1.3' }}>
+                    {learningProfile.recommendations?.[0]?.recommendationText || 'Maintain your consistency by doing a mix of technical core topics.'}
+                  </p>
+                </div>
+                {learningProfile.recommendations?.[0] && (
+                  <div className="mt-2">
+                    <button 
+                      onClick={() => navigate('/practice')} 
+                      className="btn btn-xs btn-primary-purple py-1 px-2.5 shadow-sm text-white" 
+                      style={{ fontSize: '0.7rem' }}
+                    >
+                      Practice Now
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="col-md-4">
+              <div className="border rounded-3 p-3 bg-light bg-opacity-50 h-100 d-flex flex-column justify-content-center text-center">
+                <span className="text-muted small fw-bold d-block mb-1">Estimated Study Time</span>
+                <strong className="text-dark d-block mb-1 display-6 fw-bold">
+                  {learningProfile.recommendations?.reduce((acc, r) => acc + (r.estimatedStudyTimeHours || 0), 0) || 3} Hours
+                </strong>
+                <span className="text-muted small" style={{ fontSize: '0.7rem' }}>Total recommended duration</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video Performance Widget */}
+      <div className="glass-panel p-4 bg-white mb-5 text-start animate-fade-in" style={{ border: '1px solid var(--border-grey)' }}>
+        <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+          <div className="d-flex align-items-center gap-2">
+            <span className="p-2 bg-success bg-opacity-10 text-success rounded-circle" style={{ backgroundColor: '#e8f5e9', color: '#2e7d32' }}>
+              <FiCamera style={{ fontSize: '1.2rem', strokeWidth: '2.5px' }} />
+            </span>
+            <div>
+              <h4 className="h5 fw-bold text-dark mb-0.5">Video Performance Analytics</h4>
+              <p className="text-muted small mb-0">Non-verbal and behavioral feedback aggregate averages.</p>
+            </div>
+          </div>
+          <button onClick={() => navigate('/mock-interviews')} className="btn btn-sm btn-outline-secondary" style={{ fontSize: '0.74rem' }}>
+            Go to Mock Interviews
+          </button>
+        </div>
+
+        <div className="row g-4">
+          <div className="col-6 col-md-3">
+            <div className="border rounded-3 p-3 bg-light bg-opacity-50 text-center h-100">
+              <span className="text-muted small fw-semibold d-block mb-1">Eye Contact</span>
+              <strong className="h4 fw-bold text-success d-block mb-1">
+                {videoHistory.length > 0 
+                  ? Math.round(videoHistory.reduce((sum, h) => sum + (h.eyeContactScore || 0), 0) / videoHistory.length)
+                  : 86}%
+              </strong>
+              <div className="progress" style={{ height: '5px' }}>
+                <div 
+                  className="progress-bar bg-success" 
+                  style={{ 
+                    width: `${videoHistory.length > 0 
+                      ? Math.round(videoHistory.reduce((sum, h) => sum + (h.eyeContactScore || 0), 0) / videoHistory.length)
+                      : 86}%` 
+                  }} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-6 col-md-3">
+            <div className="border rounded-3 p-3 bg-light bg-opacity-50 text-center h-100">
+              <span className="text-muted small fw-semibold d-block mb-1">Confidence</span>
+              <strong className="h4 fw-bold text-primary d-block mb-1" style={{ color: 'var(--primary-purple)' }}>
+                {videoHistory.length > 0 
+                  ? Math.round(videoHistory.reduce((sum, h) => sum + (h.confidenceScore || 0), 0) / videoHistory.length)
+                  : 82}%
+              </strong>
+              <div className="progress" style={{ height: '5px' }}>
+                <div 
+                  className="progress-bar" 
+                  style={{ 
+                    width: `${videoHistory.length > 0 
+                      ? Math.round(videoHistory.reduce((sum, h) => sum + (h.confidenceScore || 0), 0) / videoHistory.length)
+                      : 82}%`,
+                    backgroundColor: 'var(--primary-purple)'
+                  }} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-6 col-md-3">
+            <div className="border rounded-3 p-3 bg-light bg-opacity-50 text-center h-100">
+              <span className="text-muted small fw-semibold d-block mb-1">Professionalism</span>
+              <strong className="h4 fw-bold text-info d-block mb-1">
+                {videoHistory.length > 0 
+                  ? Math.round(videoHistory.reduce((sum, h) => sum + (h.communicationScore || 0), 0) / videoHistory.length)
+                  : 90}%
+              </strong>
+              <div className="progress" style={{ height: '5px' }}>
+                <div 
+                  className="progress-bar bg-info" 
+                  style={{ 
+                    width: `${videoHistory.length > 0 
+                      ? Math.round(videoHistory.reduce((sum, h) => sum + (h.communicationScore || 0), 0) / videoHistory.length)
+                      : 90}%` 
+                  }} 
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="col-6 col-md-3">
+            <div className="border rounded-3 p-3 bg-light bg-opacity-50 text-center h-100">
+              <span className="text-muted small fw-semibold d-block mb-1">Speaking Pacing</span>
+              <strong className="h4 fw-bold text-dark d-block mb-1">
+                {videoHistory.length > 0 
+                  ? Math.min(100, Math.round(videoHistory.reduce((sum, h) => sum + (h.speakingSpeed || 0), 0) / videoHistory.length / 1.5))
+                  : 84}%
+              </strong>
+              <div className="progress" style={{ height: '5px' }}>
+                <div 
+                  className="progress-bar bg-secondary" 
+                  style={{ 
+                    width: `${videoHistory.length > 0 
+                      ? Math.min(100, Math.round(videoHistory.reduce((sum, h) => sum + (h.speakingSpeed || 0), 0) / videoHistory.length / 1.5))
+                      : 84}%` 
+                  }} 
+                />
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
