@@ -64,6 +64,20 @@ h1, h2, h3, h4, h5, h6 {
   transition: all 0.3s ease-in-out;
 }
 
+@media (min-width: 992px) {
+  .sidebar-container {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  .sidebar-container::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
+  }
+}
+
 /* Sidebar Collapse Toggle Support */
 .sidebar-collapsed .sidebar-container {
   width: 0 !important;
