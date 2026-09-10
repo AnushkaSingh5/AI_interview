@@ -41,12 +41,20 @@ const VideoInterviewSchema = new mongoose.Schema({
     answer: {
       transcript: { type: String, default: '' },
       transcriptConfidence: { type: Number, default: 90 },
+      answered: { type: Boolean, default: false },
+      answerStatus: {
+        type: String,
+        enum: ['ANSWERED', 'PARTIALLY_ANSWERED', 'NO_ANSWER', 'UNINTELLIGIBLE', 'IRRELEVANT'],
+        default: 'NO_ANSWER'
+      },
       answerScore: { type: Number, default: 0 },
       technicalAccuracy: { type: Number, default: 0 },
       completeness: { type: Number, default: 0 },
       relevance: { type: Number, default: 0 },
+      reasoning: { type: Number, default: 0 },
       clarity: { type: Number, default: 0 },
       expectedConcepts: [{ type: String }],
+      coveredConcepts: [{ type: String }],
       missingConcepts: [{ type: String }],
       strengths: [{ type: String }],
       weaknesses: [{ type: String }]
@@ -80,6 +88,26 @@ const VideoInterviewSchema = new mongoose.Schema({
     },
     finalQuestionScore: { type: Number, default: 0 }
   }],
+  totalQuestions: {
+    type: Number,
+    default: 0
+  },
+  answeredQuestions: {
+    type: Number,
+    default: 0
+  },
+  answerCoverage: {
+    type: Number,
+    default: 0
+  },
+  technicalScore: {
+    type: Number,
+    default: 0
+  },
+  voiceScore: {
+    type: Number,
+    default: 0
+  },
   eyeContactScore: {
     type: Number,
     default: 0
@@ -175,7 +203,7 @@ const VideoInterviewSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['InProgress', 'Completed'],
+    enum: ['InProgress', 'Completed', 'Terminated'],
     default: 'InProgress'
   },
   completedAt: {

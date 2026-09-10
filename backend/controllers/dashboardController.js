@@ -6,60 +6,85 @@ const QuestionEvaluation = require('../models/QuestionEvaluation');
 
 // Helper to calculate streaks dynamically
 const calculateStreak = async (userId) => {
-  const completedSessions = await InterviewSession.find({
-    user: userId,
-    status: 'Completed',
-    completedAt: { $ne: null }
-  }).sort({ completedAt: -1 }).select('completedAt');
+  try {
+    const VoiceInterview = require('../models/VoiceInterview');
+    const VideoInterview = require('../models/VideoInterview');
 
-  let currentStreak = 0;
-  let longestStreak = 0;
+    const completedSessions = await InterviewSession.find({
+      user: userId,
+      status: 'Completed'
+    }).select('completedAt updatedAt createdAt');
 
-  if (completedSessions.length > 0) {
-    const dates = [...new Set(completedSessions.map(s => s.completedAt.toISOString().split('T')[0]))];
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const completedVideo = await VideoInterview.find({
+      user: userId,
+      status: 'Completed'
+    }).select('completedAt updatedAt createdAt');
 
-    if (dates[0] === today || dates[0] === yesterday) {
-      currentStreak = 1;
+    const completedVoice = await VoiceInterview.find({
+      user: userId,
+      status: 'Completed'
+    }).select('completedAt updatedAt createdAt');
+
+    const allSessions = [...completedSessions, ...completedVideo, ...completedVoice];
+
+    const validDates = allSessions
+      .map(s => s.completedAt || s.updatedAt || s.createdAt)
+      .filter(d => d && !isNaN(new Date(d).getTime()))
+      .map(d => new Date(d).toISOString().split('T')[0]);
+
+    const dates = [...new Set(validDates)].sort((a, b) => b.localeCompare(a));
+
+    let currentStreak = 0;
+    let longestStreak = 0;
+
+    if (dates.length > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+
+      if (dates[0] === today || dates[0] === yesterday) {
+        currentStreak = 1;
+        let lastDate = new Date(dates[0]);
+        for (let i = 1; i < dates.length; i++) {
+          const currentDate = new Date(dates[i]);
+          const diffTime = Math.abs(lastDate - currentDate);
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays === 1) {
+            currentStreak++;
+            lastDate = currentDate;
+          } else if (diffDays > 1) {
+            break;
+          }
+        }
+      }
+
+      let tempStreak = 1;
       let lastDate = new Date(dates[0]);
+      longestStreak = 1;
       for (let i = 1; i < dates.length; i++) {
         const currentDate = new Date(dates[i]);
         const diffTime = Math.abs(lastDate - currentDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
         if (diffDays === 1) {
-          currentStreak++;
+          tempStreak++;
           lastDate = currentDate;
         } else if (diffDays > 1) {
-          break;
+          if (tempStreak > longestStreak) {
+            longestStreak = tempStreak;
+          }
+          tempStreak = 1;
+          lastDate = currentDate;
         }
+      }
+      if (tempStreak > longestStreak) {
+        longestStreak = tempStreak;
       }
     }
 
-    let tempStreak = 1;
-    let lastDate = new Date(dates[0]);
-    longestStreak = 1;
-    for (let i = 1; i < dates.length; i++) {
-      const currentDate = new Date(dates[i]);
-      const diffTime = Math.abs(lastDate - currentDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays === 1) {
-        tempStreak++;
-        lastDate = currentDate;
-      } else if (diffDays > 1) {
-        if (tempStreak > longestStreak) {
-          longestStreak = tempStreak;
-        }
-        tempStreak = 1;
-        lastDate = currentDate;
-      }
-    }
-    if (tempStreak > longestStreak) {
-      longestStreak = tempStreak;
-    }
+    return { currentStreak, longestStreak };
+  } catch (err) {
+    console.error('Streak calculation error:', err);
+    return { currentStreak: 0, longestStreak: 0 };
   }
-
-  return { currentStreak, longestStreak };
 };
 
 // @desc    Get dashboard statistics summary
@@ -193,11 +218,14 @@ exports.getInterviewHistory = async (req, res, next) => {
       const isCompleted = s.status === 'Completed' || 
                           (matchedVoice && matchedVoice.status === 'Completed') || 
                           (matchedVideo && matchedVideo.status === 'Completed');
+      const isTerminated = s.status === 'Terminated' ||
+                           (matchedVoice && matchedVoice.status === 'Terminated') ||
+                           (matchedVideo && matchedVideo.status === 'Terminated');
       const score = matchedEval ? matchedEval.overallScore : 
                     (matchedVoice ? matchedVoice.overallScore : 
                     (matchedVideo ? matchedVideo.overallScore : null));
 
-      const finalStatus = isCompleted ? 'Completed' : s.status;
+      const finalStatus = isCompleted ? 'Completed' : (isTerminated ? 'Terminated' : s.status);
 
       console.log(`[History] Interview type: ${s.interviewMode || 'Text'}, Status: ${finalStatus}, MongoDB _id: ${s._id}, Custom sessionId: ${s.interviewId}`);
 

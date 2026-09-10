@@ -11,65 +11,297 @@ const crypto = require('crypto');
 
 const apiKey = process.env.GEMINI_API_KEY;
 
+// Helper to sanitize and verify whether an answer is valid and non-empty
+const sanitizeAndCheckAnswer = (transcriptText, questionText) => {
+  if (!transcriptText || typeof transcriptText !== 'string') {
+    return { answered: false, cleanText: '', reason: 'EMPTY' };
+  }
+  const clean = transcriptText.trim();
+  const lower = clean.toLowerCase();
+
+  // Known empty/placeholder patterns
+  if (
+    lower === '' ||
+    lower === 'no verbal answer recorded.' ||
+    lower === 'no verbal answer recorded' ||
+    lower === 'speech-to-text failed.' ||
+    lower === 'speech-to-text failed' ||
+    lower === 'no answer provided.' ||
+    lower === 'no answer provided' ||
+    lower === 'no response recorded.' ||
+    lower === 'no response recorded'
+  ) {
+    return { answered: false, cleanText: '', reason: 'EMPTY' };
+  }
+
+  // Question echo check (interviewer speech captured by mistake)
+  if (questionText && typeof questionText === 'string') {
+    const cleanQ = questionText.trim().toLowerCase().replace(/[.,?!]/g, '');
+    const cleanA = lower.replace(/[.,?!]/g, '');
+    if (cleanA === cleanQ) {
+      return { answered: false, cleanText: '', reason: 'QUESTION_ECHO' };
+    }
+  }
+
+  // Word count check - at least 3 words to be considered an attempted answer
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length < 3) {
+    return { answered: false, cleanText: clean, reason: 'TOO_SHORT' };
+  }
+
+  return { answered: true, cleanText: clean, reason: 'VALID' };
+};
+
+// Backward-compatible wrapper
+const isAnswerEmpty = (text) => {
+  return !sanitizeAndCheckAnswer(text).answered;
+};
+
+// Deterministic Score Calculator for the whole session
+const calculateInterviewScore = ({
+  evaluatedQuestions,
+  videoMetrics,
+  timeline,
+  speakingSpeed,
+  fillerWords
+}) => {
+  const totalQuestions = evaluatedQuestions.length;
+  const answeredQuestions = evaluatedQuestions.filter(q => q.answer && q.answer.answered === true).length;
+  const answerCoverage = totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0;
+
+  // 1. Technical Quality & Technical Score
+  const answeredList = evaluatedQuestions.filter(q => q.answer && q.answer.answered === true);
+  const technicalQuality = answeredList.length > 0
+    ? Math.round(answeredList.reduce((sum, q) => sum + (q.answer.answerScore || 0), 0) / answeredList.length)
+    : 0;
+  
+  // Technical score scaled strictly by answer coverage
+  const technicalScore = Math.round(technicalQuality * (answerCoverage / 100));
+
+  // 2. Video Delivery Score (Layer 2)
+  const overallEyePct = videoMetrics ? (videoMetrics.eyeContactPercentage || 0) : 80;
+  const overallCenterPct = videoMetrics ? (videoMetrics.centerFacingPercentage || 0) : 80;
+  const overallFacePct = videoMetrics ? (videoMetrics.facePresencePercentage || 0) : 95;
+  const overallExprPct = videoMetrics && videoMetrics.expressionDistribution
+    ? Math.min(100, (videoMetrics.expressionDistribution.neutral || 0) + (videoMetrics.expressionDistribution.smile || 0))
+    : 90;
+
+  // 3. Proctoring Score
+  let proctoringScore = 100;
+  (timeline || []).forEach(evt => {
+    const typeUpper = (evt.eventType || '').toUpperCase();
+    if (typeUpper === 'LOOKING_AWAY' || typeUpper === 'LOOK-AWAY') proctoringScore -= 10;
+    if (typeUpper === 'NO_FACE' || typeUpper === 'NO-FACE') proctoringScore -= 20;
+    if (typeUpper === 'TAB_HIDDEN' || typeUpper === 'TAB-HIDDEN') proctoringScore -= 25;
+    if (typeUpper === 'WINDOW_BLUR' || typeUpper === 'WINDOW-BLUR') proctoringScore -= 15;
+  });
+  proctoringScore = Math.max(0, proctoringScore);
+
+  const videoDeliveryScore = Math.round(
+    (overallEyePct * 0.40) +
+    (overallCenterPct * 0.25) +
+    (overallExprPct * 0.20) +
+    (overallFacePct * 0.15)
+  );
+
+  // 4. Communication & Voice Scores
+  let communicationScore = 0;
+  let voiceScore = 0;
+
+  if (answeredQuestions > 0) {
+    const commAvg = Math.round(
+      answeredList.reduce((sum, q) => sum + ((q.answer.clarity || 70) * 0.5 + (q.answer.relevance || 70) * 0.5), 0) / answeredList.length
+    );
+    communicationScore = Math.round(commAvg * (answerCoverage / 100));
+
+    let paceScore = 80;
+    const pace = speakingSpeed || 120;
+    if (pace >= 110 && pace <= 160) paceScore = 95;
+    else if (pace >= 80 && pace < 110) paceScore = 75;
+    else if (pace > 160 && pace <= 200) paceScore = 75;
+    else paceScore = 50;
+
+    let fillerScore = Math.max(40, 100 - (fillerWords || 0) * 5);
+    voiceScore = Math.round((paceScore * 0.6 + fillerScore * 0.4) * (answerCoverage / 100));
+  } else {
+    communicationScore = 0;
+    voiceScore = 0;
+  }
+
+  // 5. Final Overall Score Aggregation
+  let overallScore = 0;
+
+  // RULE 1: Hard Zero if 0 questions answered
+  if (answeredQuestions === 0) {
+    overallScore = 0;
+  } else {
+    // RULE 2: Weighted Formula (Technical 60%, Comm 15%, Voice 5%, Video 10%, Proctoring 10%)
+    const rawOverall = (
+      (technicalScore * 0.60) +
+      (communicationScore * 0.15) +
+      (voiceScore * 0.05) +
+      (videoDeliveryScore * 0.10) +
+      (proctoringScore * 0.10)
+    );
+
+    let finalScore = Math.round(rawOverall);
+
+    // RULE 3: Hard Caps for Low Coverage / Low Technical Correctness
+    if (answerCoverage <= 20) {
+      finalScore = Math.min(25, finalScore);
+    } else if (answerCoverage <= 40) {
+      finalScore = Math.min(45, finalScore);
+    }
+
+    if (technicalScore < 30) {
+      finalScore = Math.min(40, finalScore);
+    }
+    if (technicalScore < 15) {
+      finalScore = Math.min(20, finalScore);
+    }
+
+    overallScore = Math.max(0, Math.min(100, finalScore));
+  }
+
+  return {
+    totalQuestions,
+    answeredQuestions,
+    answerCoverage,
+    technicalQuality,
+    technicalScore,
+    communicationScore,
+    voiceScore,
+    videoDeliveryScore,
+    proctoringScore,
+    overallScore,
+    overallEyePct,
+    overallCenterPct,
+    overallFacePct,
+    overallExprPct,
+    confidenceScore: Math.round((overallCenterPct + overallEyePct) / 2)
+  };
+};
+
 // Helper to query Gemini AI for behavioral and technical grading
 const generateAICoachVideoGrading = async (session, answers, behavioralMetrics) => {
+  const answerChecks = answers.map(a => ({
+    ...a,
+    check: sanitizeAndCheckAnswer(a.transcriptText, a.questionText)
+  }));
+
+  const answeredCount = answerChecks.filter(a => a.check.answered).length;
+
+  // If NO questions were answered verbally, skip Gemini and return deterministic 0s
+  if (answeredCount === 0) {
+    return {
+      questionEvaluations: answers.map(a => ({
+        questionNumber: a.questionNumber,
+        answered: false,
+        answerStatus: "NO_ANSWER",
+        technicalAccuracy: 0,
+        completeness: 0,
+        relevance: 0,
+        reasoning: 0,
+        clarity: 0,
+        answerScore: 0,
+        expectedConcepts: [],
+        coveredConcepts: [],
+        missingConcepts: ["No verbal answer was provided"],
+        incorrectClaims: [],
+        strengths: [],
+        weaknesses: ["No verbal answer was spoken or recorded for this question."],
+        feedback: "No verbal answer recorded for this question."
+      })),
+      overallAnswerQualityScore: 0,
+      overallFeedback: "No verbal answers were detected during this video interview session. Spoken answers are required to receive a technical evaluation.",
+      strengths: [],
+      focusGaps: ["Candidate did not provide verbal answers to the interview questions."],
+      recommendations: ["Ensure your microphone is enabled and clearly speak your answers during each question time window."],
+      learningRoadmap: []
+    };
+  }
+
   if (!apiKey) {
-    console.warn('[Video AI] API key missing. Falling back to local scoring.');
+    console.warn('[Video AI] GEMINI_API_KEY missing. Falling back to local scoring.');
     return getFallbackGrading(session, answers, behavioralMetrics);
   }
 
-  const prompt = `You are a Lead Technical and Communication Interviewer. Grade the following AI Video Mock Interview session.
+  const prompt = `You are a Lead Technical and Communication Interviewer evaluating a candidate's video mock interview.
 
 INTERVIEW PARAMETERS:
 - Title: ${session.title}
 - Target Role: ${session.role}
 - Target Difficulty: ${session.difficulty}
 
-CANDIDATE TRANSCRIPT ANSWER LIST:
-${JSON.stringify(answers.map(a => ({
+CANDIDATE QUESTIONS & TRANSCRIPTS:
+${JSON.stringify(answerChecks.map(a => ({
   questionNumber: a.questionNumber,
   questionText: a.questionText || '',
-  transcriptText: a.transcriptText || ''
+  transcriptText: a.check.answered ? a.check.cleanText : '',
+  isAnswered: a.check.answered
 })), null, 2)}
 
-INSTRUCTIONS FOR EVALUATION:
+INSTRUCTIONS:
 1. Grade the technical correctness of each answer independently. Do NOT perform simple keyword matching. Determine expected concepts and check semantic equivalence.
-2. If the candidate gives an incorrect technical explanation (e.g. non-atomic writes to prevent race conditions), the "technicalAccuracy" and "answerScore" must be low (less than 40), regardless of candidate confidence.
-3. If the transcript is empty, silent, or has low-confidence noise, set "answerEvaluationStatus" to "UNAVAILABLE" for that question, scoring technical accuracy and score near 0.
-4. Calculate "answerScore" using this weighted rubric:
-   - Technical Correctness / Accuracy: 45%
-   - Completeness: 25%
-   - Relevance: 15%
-   - Clarity: 15%
-5. Return ONLY a valid JSON object matching the JSON Schema below. No markdown formatting.
+2. If "isAnswered" is false or the transcript is empty/silent:
+   - "answered": false
+   - "answerStatus": "NO_ANSWER"
+   - technicalAccuracy: 0, completeness: 0, relevance: 0, reasoning: 0, clarity: 0, answerScore: 0
+   - coveredConcepts: []
+   - missingConcepts: ["No verbal answer was provided"]
+   - incorrectClaims: []
+   - strengths: []
+   - weaknesses: ["No verbal answer was spoken or recorded for this question."]
+   - feedback: "No verbal answer recorded for this question."
+3. If "isAnswered" is true:
+   - "answered": true
+   - "answerStatus": Choose one: "ANSWERED", "PARTIALLY_ANSWERED", "IRRELEVANT", "UNINTELLIGIBLE"
+   - "technicalAccuracy": 0 to 100. Must be strictly evaluated. If candidate provides incorrect explanations, score < 40.
+   - "completeness": 0 to 100 (how much of the expected solution was covered).
+   - "relevance": 0 to 100 (whether it directly addresses the question).
+   - "reasoning": 0 to 100 (depth of logic, trade-offs, architecture).
+   - "clarity": 0 to 100 (structure and communication clarity).
+   - "answerScore": Math.round(technicalAccuracy * 0.40 + completeness * 0.25 + relevance * 0.15 + reasoning * 0.10 + clarity * 0.10)
+   - "expectedConcepts": Array of key technical concepts expected for this question
+   - "coveredConcepts": Array of concepts the candidate accurately demonstrated
+   - "missingConcepts": Array of concepts the candidate missed
+   - "incorrectClaims": Array of false or incorrect technical claims made by candidate (if any)
+   - "strengths": Array of genuine technical strengths demonstrated (empty if none)
+   - "weaknesses": Array of genuine technical gaps or errors
+   - "feedback": Concise constructive feedback
+4. overallAnswerQualityScore: Average of answerScore across answered questions (0 if none answered).
+5. overallFeedback: Overall summary of technical performance.
+6. Return ONLY valid JSON matching this schema with no markdown fences.
 
-JSON Schema:
+Schema:
 {
   "questionEvaluations": [
     {
       "questionNumber": 1,
-      "answerEvaluationStatus": "AVAILABLE", // or "UNAVAILABLE"
+      "answered": true,
+      "answerStatus": "ANSWERED",
       "technicalAccuracy": 85,
       "completeness": 80,
       "relevance": 90,
+      "reasoning": 80,
       "clarity": 85,
       "answerScore": 84,
-      "expectedConcepts": ["database transactions", "atomic updates", "locking"],
-      "coveredConcepts": ["atomic updates", "database transactions"],
-      "missingConcepts": ["row-level locking"],
+      "expectedConcepts": ["database transactions", "atomic updates"],
+      "coveredConcepts": ["database transactions"],
+      "missingConcepts": ["atomic updates"],
       "incorrectClaims": [],
-      "strengths": ["Clear definition of transaction boundaries"],
-      "weaknesses": ["Missed explaining lock contention management"],
-      "feedback": "Solid response covering atomicity."
+      "strengths": ["Clear explanation of transaction boundaries"],
+      "weaknesses": ["Missed discussing atomic isolation levels"],
+      "feedback": "Strong response with clear structure."
     }
   ],
-  "overallAnswerQualityScore": 82,
-  "overallFeedback": "Great technical clarity.",
-  "strengths": ["Strong conceptual definitions"],
-  "focusGaps": ["Missed concurrency mechanisms on question 1"],
-  "recommendations": ["Practice transaction concurrency models"],
+  "overallAnswerQualityScore": 84,
+  "overallFeedback": "Solid technical performance with good foundational clarity.",
+  "strengths": ["Clear conceptual definitions"],
+  "focusGaps": ["Review concurrency edge cases"],
+  "recommendations": ["Practice designing distributed architectures under load"],
   "learningRoadmap": [
-    { "priority": "Priority 1", "title": "Database Locking", "description": "Study optimistic vs pessimistic locks." }
+    { "priority": "Priority 1", "title": "Concurrency Models", "description": "Study optimistic locking and isolation levels." }
   ]
 }`;
 
@@ -88,7 +320,7 @@ JSON Schema:
 
     const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     const parsed = parseGeminiJson(text);
-    if (!parsed) throw new Error('Parsing failed');
+    if (!parsed) throw new Error('Gemini JSON parsing failed');
     return parsed;
   } catch (error) {
     console.error('[Video AI] AI Evaluation failed, using local fallback:', error.message);
@@ -98,64 +330,89 @@ JSON Schema:
 
 const getFallbackGrading = (session, answers, metrics) => {
   const questionEvaluations = answers.map(a => {
-    const text = a.transcriptText || '';
-    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-    let status = "AVAILABLE";
-    let score = 0;
-    let techAcc = 0;
-    let comp = 0;
-    let rel = 0;
-    let clar = 0;
-    let feedback = "No response provided.";
-
-    if (wordCount === 0 || text.toLowerCase().includes('no verbal answer') || text.toLowerCase().includes('speech-to-text failed')) {
-      status = "UNAVAILABLE";
-      feedback = "Answer could not be reliably transcribed or was empty.";
-    } else if (wordCount > 40) {
-      techAcc = 85;
-      comp = 80;
-      rel = 90;
-      clar = 85;
-      score = Math.round(techAcc * 0.45 + comp * 0.25 + rel * 0.15 + clar * 0.15);
-      feedback = "Detailed technical response with coherent explanations.";
-    } else {
-      techAcc = 60;
-      comp = 50;
-      rel = 75;
-      clar = 70;
-      score = Math.round(techAcc * 0.45 + comp * 0.25 + rel * 0.15 + clar * 0.15);
-      feedback = "Core concepts mentioned briefly but lacks technical depth.";
+    const check = sanitizeAndCheckAnswer(a.transcriptText, a.questionText);
+    if (!check.answered) {
+      return {
+        questionNumber: a.questionNumber,
+        answered: false,
+        answerStatus: "NO_ANSWER",
+        technicalAccuracy: 0,
+        completeness: 0,
+        relevance: 0,
+        reasoning: 0,
+        clarity: 0,
+        answerScore: 0,
+        expectedConcepts: [],
+        coveredConcepts: [],
+        missingConcepts: ["No verbal answer was provided"],
+        incorrectClaims: [],
+        strengths: [],
+        weaknesses: ["No verbal answer was spoken or recorded for this question."],
+        feedback: "No verbal answer recorded for this question."
+      };
     }
+
+    const words = check.cleanText.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+
+    let techAcc = 60;
+    let comp = 50;
+    let rel = 70;
+    let reas = 50;
+    let clar = 65;
+    let status = "PARTIALLY_ANSWERED";
+
+    if (wordCount > 40) {
+      techAcc = 80;
+      comp = 75;
+      rel = 85;
+      reas = 75;
+      clar = 80;
+      status = "ANSWERED";
+    } else if (wordCount > 15) {
+      techAcc = 65;
+      comp = 60;
+      rel = 75;
+      reas = 60;
+      clar = 70;
+      status = "PARTIALLY_ANSWERED";
+    }
+
+    const score = Math.round(techAcc * 0.40 + comp * 0.25 + rel * 0.15 + reas * 0.10 + clar * 0.10);
 
     return {
       questionNumber: a.questionNumber,
-      answerEvaluationStatus: status,
+      answered: true,
+      answerStatus: status,
       technicalAccuracy: techAcc,
       completeness: comp,
       relevance: rel,
+      reasoning: reas,
       clarity: clar,
       answerScore: score,
-      expectedConcepts: ["relevant patterns", "standard design details"],
-      coveredConcepts: wordCount > 40 ? ["relevant patterns"] : [],
-      missingConcepts: wordCount <= 40 ? ["standard design details"] : [],
+      expectedConcepts: ["Relevant core engineering concepts", "Standard design patterns"],
+      coveredConcepts: wordCount > 30 ? ["Relevant core engineering concepts"] : [],
+      missingConcepts: wordCount <= 30 ? ["Standard design patterns"] : [],
       incorrectClaims: [],
-      strengths: wordCount > 40 ? ["Expressive communication flow"] : [],
-      weaknesses: wordCount <= 40 ? ["Response too short to verify completeness"] : [],
-      feedback
+      strengths: wordCount > 30 ? ["Provided structured verbal explanation"] : [],
+      weaknesses: wordCount <= 30 ? ["Response was concise; deeper technical explanation recommended"] : [],
+      feedback: wordCount > 30 ? "Good conceptual overview provided." : "Core points touched briefly."
     };
   });
 
-  const validEvaluations = questionEvaluations.filter(q => q.answerEvaluationStatus === "AVAILABLE");
-  const overallAnswerQualityScore = validEvaluations.length > 0
-    ? Math.round(validEvaluations.reduce((sum, q) => sum + q.answerScore, 0) / validEvaluations.length)
-    : 10;
+  const answeredList = questionEvaluations.filter(q => q.answered && q.answerScore > 0);
+  const overallAnswerQualityScore = answeredList.length > 0
+    ? Math.round(answeredList.reduce((sum, q) => sum + q.answerScore, 0) / answeredList.length)
+    : 0;
 
   return {
     questionEvaluations,
     overallAnswerQualityScore,
-    overallFeedback: 'Successfully completed the video mock interview session. Evaluated based on transcript content and proctoring metrics.',
-    strengths: ['Addressed the main question targets with appropriate terminology'],
-    focusGaps: ['Technical response depth can be expanded further'],
+    overallFeedback: overallAnswerQualityScore > 0
+      ? 'Completed the video mock interview session. Evaluated based on transcript content and proctoring metrics.'
+      : 'No verbal answers were detected during this video interview session.',
+    strengths: overallAnswerQualityScore > 0 ? ['Spoke responses with clear flow'] : [],
+    focusGaps: overallAnswerQualityScore > 0 ? ['Technical response depth can be expanded further'] : ['Candidate did not provide verbal answers.'],
     recommendations: ['Practice structuring engineering design answers using standard patterns'],
     learningRoadmap: [
       {
@@ -227,6 +484,31 @@ exports.startSession = async (req, res, next) => {
   }
 };
 
+// Helper to find video and parent session with any ID format (Custom ID or Mongo ID)
+const findVideoSessionFlexibly = async (sessionCode, userId) => {
+  if (!sessionCode) return { parentSession: null, videoSession: null };
+  const isMongoId = mongoose.Types.ObjectId.isValid(sessionCode) && String(new mongoose.Types.ObjectId(sessionCode)) === String(sessionCode);
+
+  const parentSession = await InterviewSession.findOne({
+    $or: [
+      { interviewId: sessionCode },
+      ...(isMongoId ? [{ _id: sessionCode }] : [])
+    ],
+    user: userId
+  });
+
+  let videoSession = await VideoInterview.findOne({
+    $or: [
+      { sessionId: sessionCode },
+      ...(parentSession ? [{ sessionId: parentSession.interviewId }, { sessionId: parentSession._id.toString() }] : []),
+      ...(isMongoId ? [{ _id: sessionCode }] : [])
+    ],
+    user: userId
+  });
+
+  return { parentSession, videoSession };
+};
+
 // 2. Upload video recording file
 exports.uploadVideoFile = async (req, res, next) => {
   try {
@@ -235,7 +517,7 @@ exports.uploadVideoFile = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'No video file uploaded' });
     }
 
-    const session = await VideoInterview.findOne({ sessionId, user: req.user._id });
+    const { videoSession: session } = await findVideoSessionFlexibly(sessionId, req.user._id);
     if (!session) {
       return res.status(404).json({ success: false, message: 'Video session not found' });
     }
@@ -286,7 +568,7 @@ exports.evaluateSession = async (req, res, next) => {
       videoMetrics
     } = req.body;
 
-    const session = await VideoInterview.findOne({ sessionId, user: req.user._id });
+    const { videoSession: session, parentSession } = await findVideoSessionFlexibly(sessionId, req.user._id);
     if (!session) {
       return res.status(404).json({ success: false, message: 'Video session not found' });
     }
@@ -299,23 +581,29 @@ exports.evaluateSession = async (req, res, next) => {
         startTime: match ? match.startTime : null,
         endTime: match ? match.endTime : null,
         questionMetrics: match ? match.questionMetrics : null,
-        transcriptText: match ? match.transcriptText : ''
+        transcriptText: match ? (match.transcriptText || '') : ''
       };
     });
 
     const aiAnalysis = await generateAICoachVideoGrading(session, updatedTranscripts, {
       eyeContactScore: videoMetrics ? videoMetrics.eyeContactPercentage : (eyeContactScore || 80),
       speakingSpeed: speakingSpeed || 120,
-      fillerWords: fillerWords || 5,
+      fillerWords: fillerWords || 0,
       emotions: emotions || { happy: 10, neutral: 80, surprised: 0, nervous: 10 },
       bodyLanguage: bodyLanguage || { posture: 'Good', headMovement: 'Normal', smileFrequency: 'Normal' },
       facialConfidence: facialConfidence || 80
     });
 
-    // Populate question-level evaluations (Task 2 & 14 & 21)
+    // Populate question-level evaluations
     const evaluatedQuestions = updatedTranscripts.map(ans => {
       const qEvents = (timeline || []).filter(evt => {
-        const evtTime = new Date(evt.timestamp).getTime();
+        let evtTime = new Date(evt.timestamp).getTime();
+        if (isNaN(evtTime) && typeof evt.timestamp === 'string' && evt.timestamp.includes(':')) {
+          const parts = evt.timestamp.split(':');
+          const offsetSec = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+          const baseTime = session.createdAt ? new Date(session.createdAt).getTime() : (ans.startTime - 5000);
+          evtTime = baseTime + offsetSec * 1000;
+        }
         return evtTime >= ans.startTime && evtTime <= ans.endTime;
       });
 
@@ -344,17 +632,69 @@ exports.evaluateSession = async (req, res, next) => {
       const qVideoScore = Math.round(
         (qEye * 0.40) +
         (qCenter * 0.25) +
-        (qExpr * 0.15) +
-        (qFace * 0.10) +
-        (qProcScore * 0.10)
+        (qExpr * 0.20) +
+        (qFace * 0.15)
       );
 
+      const ansCheck = sanitizeAndCheckAnswer(ans.transcriptText, ans.questionText);
       const match = (aiAnalysis.questionEvaluations || []).find(e => e.questionNumber === ans.questionNumber);
-      const ansScore = match ? match.answerScore : 65;
 
+      if (!ansCheck.answered) {
+        // Question was not answered verbally
+        return {
+          questionNumber: ans.questionNumber,
+          topic: ans.topic || 'General',
+          questionText: ans.questionText,
+          transcriptText: '',
+          startTime: ans.startTime,
+          endTime: ans.endTime,
+          score: 0,
+          feedback: 'No verbal answer recorded for this question.',
+          answer: {
+            transcript: '',
+            transcriptConfidence: 0,
+            answered: false,
+            answerStatus: 'NO_ANSWER',
+            answerScore: 0,
+            technicalAccuracy: 0,
+            completeness: 0,
+            relevance: 0,
+            reasoning: 0,
+            clarity: 0,
+            expectedConcepts: match ? (match.expectedConcepts || []) : [],
+            coveredConcepts: [],
+            missingConcepts: ['No verbal answer provided'],
+            strengths: [],
+            weaknesses: ['No verbal answer was spoken or recorded for this question.']
+          },
+          video: {
+            facePresencePercentage: qFace,
+            cameraAlignmentPercentage: qCenter,
+            eyeContactPercentage: qEye,
+            expressionDistribution: qMetrics.expressionDistribution || { neutral: 80, smile: 10, frown: 5, surprise: 5 },
+            headPoseDistribution: { neutral: qCenter, active: 100 - qCenter },
+            fillerWordCount: 0,
+            speakingRate: 0,
+            videoDeliveryScore: qVideoScore
+          },
+          proctoring: {
+            events: qEvents.map(e => ({
+              timestamp: e.timestamp,
+              eventType: e.eventType,
+              description: e.description,
+              durationMs: e.durationMs || 2000
+            })),
+            proctoringScore: qProcScore
+          },
+          finalQuestionScore: 0
+        };
+      }
+
+      // Question was answered verbally
+      const ansScore = match && typeof match.answerScore === 'number' ? match.answerScore : 60;
       let finalQScore = Math.round((ansScore * 0.70) + (qVideoScore * 0.20) + (qProcScore * 0.10));
-      if (ansScore < 40) finalQScore = Math.min(55, finalQScore);
-      if (ansScore < 25) finalQScore = Math.min(40, finalQScore);
+      if (ansScore < 40) finalQScore = Math.min(50, finalQScore);
+      if (ansScore < 25) finalQScore = Math.min(30, finalQScore);
 
       return {
         questionNumber: ans.questionNumber,
@@ -364,17 +704,20 @@ exports.evaluateSession = async (req, res, next) => {
         startTime: ans.startTime,
         endTime: ans.endTime,
         score: finalQScore,
-        feedback: match ? match.feedback : 'Solid response.',
-        
+        feedback: match?.feedback || 'Solid response.',
         answer: {
           transcript: ans.transcriptText,
           transcriptConfidence: ans.transcriptConfidence || 90,
+          answered: true,
+          answerStatus: match?.answerStatus || 'ANSWERED',
           answerScore: ansScore,
-          technicalAccuracy: match ? match.technicalAccuracy : ansScore,
-          completeness: match ? match.completeness : ansScore,
-          relevance: match ? match.relevance : ansScore,
-          clarity: match ? match.clarity : ansScore,
+          technicalAccuracy: match && typeof match.technicalAccuracy === 'number' ? match.technicalAccuracy : ansScore,
+          completeness: match && typeof match.completeness === 'number' ? match.completeness : ansScore,
+          relevance: match && typeof match.relevance === 'number' ? match.relevance : ansScore,
+          reasoning: match && typeof match.reasoning === 'number' ? match.reasoning : ansScore,
+          clarity: match && typeof match.clarity === 'number' ? match.clarity : ansScore,
           expectedConcepts: match ? (match.expectedConcepts || []) : [],
+          coveredConcepts: match ? (match.coveredConcepts || []) : [],
           missingConcepts: match ? (match.missingConcepts || []) : [],
           strengths: match ? (match.strengths || []) : [],
           weaknesses: match ? (match.weaknesses || []) : []
@@ -402,90 +745,68 @@ exports.evaluateSession = async (req, res, next) => {
       };
     });
 
+    // Run deterministic interview score aggregation
+    const scoreResult = calculateInterviewScore({
+      evaluatedQuestions,
+      videoMetrics,
+      timeline,
+      speakingSpeed,
+      fillerWords
+    });
+
     session.transcript = evaluatedQuestions;
     session.timeline = timeline || [];
-    
-    // Save raw metrics
     if (videoMetrics) {
       session.videoMetrics = videoMetrics;
     }
 
-    // LAYER 2: Compute overall video delivery score (Task 12)
-    const overallEyePct = videoMetrics ? (videoMetrics.eyeContactPercentage || 0) : (eyeContactScore || 80);
-    const overallCenterPct = videoMetrics ? (videoMetrics.centerFacingPercentage || 0) : 80;
-    const overallFacePct = videoMetrics ? (videoMetrics.facePresencePercentage || 0) : 95;
-    const overallExprPct = videoMetrics && videoMetrics.expressionDistribution
-      ? Math.min(100, (videoMetrics.expressionDistribution.neutral || 0) + (videoMetrics.expressionDistribution.smile || 0))
-      : 90;
-    
-    let overallProcScore = 100;
-    (timeline || []).forEach(evt => {
-      const typeUpper = (evt.eventType || '').toUpperCase();
-      if (typeUpper === 'LOOKING_AWAY' || typeUpper === 'LOOK-AWAY') overallProcScore -= 10;
-      if (typeUpper === 'NO_FACE' || typeUpper === 'NO-FACE') overallProcScore -= 20;
-      if (typeUpper === 'TAB_HIDDEN' || typeUpper === 'TAB-HIDDEN') overallProcScore -= 25;
-      if (typeUpper === 'WINDOW_BLUR' || typeUpper === 'WINDOW-BLUR') overallProcScore -= 15;
-    });
-    overallProcScore = Math.max(0, overallProcScore);
+    session.totalQuestions = scoreResult.totalQuestions;
+    session.answeredQuestions = scoreResult.answeredQuestions;
+    session.answerCoverage = scoreResult.answerCoverage;
+    session.technicalScore = scoreResult.technicalScore;
+    session.overallAnswerQualityScore = scoreResult.technicalQuality;
+    session.videoDeliveryScore = scoreResult.videoDeliveryScore;
+    session.proctoringScore = scoreResult.proctoringScore;
+    session.overallScore = scoreResult.overallScore;
+    session.eyeContactScore = scoreResult.overallEyePct;
+    session.facialConfidence = scoreResult.videoDeliveryScore;
+    session.communicationScore = scoreResult.communicationScore;
+    session.voiceScore = scoreResult.voiceScore;
+    session.confidenceScore = scoreResult.confidenceScore;
+    session.fillerWords = scoreResult.answeredQuestions > 0 ? (fillerWords || countFillerWords(answers.map(a => a.transcriptText).join(' '))) : 0;
+    session.speakingSpeed = scoreResult.answeredQuestions > 0 ? (speakingSpeed || 120) : 0;
 
-    const computedVideoDeliveryScore = Math.round(
-      (overallEyePct * 0.40) +
-      (overallCenterPct * 0.25) +
-      (overallExprPct * 0.15) +
-      (overallFacePct * 0.10) +
-      (overallProcScore * 0.10)
-    );
-
-    // Populate overall session layers
-    const finalAnswerQualityScore = aiAnalysis.overallAnswerQualityScore || 70;
-
-    // LAYER 3: Combined Final Score (Task 13)
-    let computedFinalOverallScore = Math.round(
-      (finalAnswerQualityScore * 0.70) +
-      (computedVideoDeliveryScore * 0.20) +
-      (overallProcScore * 0.10)
-    );
-
-    // Correctness Guard
-    if (finalAnswerQualityScore < 40) computedFinalOverallScore = Math.min(55, computedFinalOverallScore);
-    if (finalAnswerQualityScore < 25) computedFinalOverallScore = Math.min(40, computedFinalOverallScore);
-
-    session.overallAnswerQualityScore = finalAnswerQualityScore;
-    session.videoDeliveryScore = computedVideoDeliveryScore;
-    session.proctoringScore = overallProcScore;
-    session.overallScore = computedFinalOverallScore;
-    session.eyeContactScore = overallEyePct;
-    session.facialConfidence = computedVideoDeliveryScore;
-    
     session.bodyLanguage = {
-      posture: overallCenterPct > 75 ? 'Good Posture' : 'Leaning / Asymmetric',
+      posture: scoreResult.overallCenterPct > 75 ? 'Good Posture' : 'Leaning / Asymmetric',
       headMovement: videoMetrics && Math.abs(videoMetrics.averageYaw) > 10 ? 'High' : 'Normal',
       smileFrequency: videoMetrics && videoMetrics.expressionDistribution && videoMetrics.expressionDistribution.smile > 20 ? 'High' : 'Normal'
     };
 
-    session.confidenceScore = aiAnalysis.confidenceScore || Math.round((overallCenterPct + overallEyePct) / 2);
-    session.communicationScore = aiAnalysis.communicationScore || computedVideoDeliveryScore;
-    session.fillerWords = fillerWords || countFillerWords(answers.map(a => a.transcriptText).join(' '));
-    session.speakingSpeed = speakingSpeed || 120;
     session.emotions = emotions || {
       happy: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.smile : 10,
       neutral: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.neutral : 80,
       surprised: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.surprise : 5,
       nervous: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.frown : 5
     };
-    
+
     session.report = {
       overallFeedback: aiAnalysis.overallFeedback,
-      strengths: aiAnalysis.strengths || [],
+      strengths: scoreResult.answeredQuestions > 0 ? (aiAnalysis.strengths || []) : [],
       focusGaps: aiAnalysis.focusGaps || [],
       recommendations: aiAnalysis.recommendations || [],
-      learningRoadmap: aiAnalysis.learningRoadmap || []
+      learningRoadmap: scoreResult.answeredQuestions > 0 ? (aiAnalysis.learningRoadmap || []) : []
     };
 
     session.status = 'Completed';
     session.completedAt = new Date();
 
     await session.save();
+
+    console.log(`[Evaluation] Session ID: ${session.sessionId}`);
+    console.log(`[Evaluation] Questions: Total = ${scoreResult.totalQuestions}, Answered = ${scoreResult.answeredQuestions}, Coverage = ${scoreResult.answerCoverage}%`);
+    console.log(`[Evaluation] Technical Quality: ${scoreResult.technicalQuality}%, Technical Score (Scaled): ${scoreResult.technicalScore}%`);
+    console.log(`[Evaluation] Video Delivery: ${scoreResult.videoDeliveryScore}%, Proctoring: ${scoreResult.proctoringScore}%, Comm: ${scoreResult.communicationScore}%, Voice: ${scoreResult.voiceScore}%`);
+    console.log(`[Evaluation] Final Overall Score: ${scoreResult.overallScore}%`);
 
     // Sync parent InterviewSession status and overallScore to Completed
     const isMongoId = mongoose.Types.ObjectId.isValid(sessionId) && String(new mongoose.Types.ObjectId(sessionId)) === String(sessionId);
@@ -502,7 +823,7 @@ exports.evaluateSession = async (req, res, next) => {
         $set: {
           status: 'Completed',
           progress: 100,
-          overallScore: computedFinalOverallScore,
+          overallScore: scoreResult.overallScore,
           completedAt: new Date()
         }
       }
@@ -544,6 +865,7 @@ const syncVideoSessionQuestions = async (sessionCode, userId) => {
   let videoSession = await VideoInterview.findOne({
     $or: [
       { sessionId: sessionCode },
+      ...(parentSession ? [{ sessionId: parentSession.interviewId }, { sessionId: parentSession._id.toString() }] : []),
       ...(isMongoId ? [{ _id: sessionCode }] : [])
     ],
     user: userId
@@ -553,18 +875,25 @@ const syncVideoSessionQuestions = async (sessionCode, userId) => {
     const questions = await InterviewQuestion.find({ sessionId: parentSession._id }).sort({ questionNumber: 1 });
 
     if (!videoSession) {
-      videoSession = await VideoInterview.create({
-        user: userId,
-        sessionId: parentSession.interviewId,
-        title: parentSession.title || `AI Video Interview - ${parentSession.role}`,
-        role: parentSession.role,
-        difficulty: parentSession.difficulty,
-        transcript: []
-      });
-      console.log(`[Video Sync] VideoInterview created & loaded: ${videoSession._id}`);
+      try {
+        videoSession = await VideoInterview.create({
+          user: userId,
+          sessionId: parentSession.interviewId,
+          title: parentSession.title || `AI Video Interview - ${parentSession.role}`,
+          role: parentSession.role,
+          difficulty: parentSession.difficulty,
+          transcript: []
+        });
+        console.log(`[Video Sync] VideoInterview created & loaded: ${videoSession._id}`);
+      } catch (createErr) {
+        videoSession = await VideoInterview.findOne({
+          sessionId: parentSession.interviewId,
+          user: userId
+        });
+      }
     }
 
-    if (questions.length > 0 && videoSession.transcript.length === 0) {
+    if (videoSession && questions.length > 0 && (!videoSession.transcript || videoSession.transcript.length === 0)) {
       const formattedQuestions = questions.map((q, idx) => ({
         questionNumber: idx + 1,
         topic: q.topic || 'General',
@@ -583,11 +912,11 @@ const syncVideoSessionQuestions = async (sessionCode, userId) => {
       console.log(`[Video Sync] Questions copied: ${questions.length}`);
     }
 
-    return { parentSession, videoSession, questionsCount: videoSession.transcript.length || questions.length };
+    return { parentSession, videoSession, questionsCount: (videoSession && videoSession.transcript ? videoSession.transcript.length : 0) || questions.length };
   }
 
   if (videoSession) {
-    return { parentSession: null, videoSession, questionsCount: videoSession.transcript.length };
+    return { parentSession: null, videoSession, questionsCount: videoSession.transcript ? videoSession.transcript.length : 0 };
   }
 
   return { parentSession: null, videoSession: null, questionsCount: 0 };
@@ -640,6 +969,48 @@ exports.getHistory = async (req, res, next) => {
     res.status(200).json({
       success: true,
       history
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// 6. Terminate interview session in between
+exports.terminateSession = async (req, res, next) => {
+  try {
+    const { sessionId, reason } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'Session ID is required' });
+    }
+
+    const VideoInterview = require('../models/VideoInterview');
+    const InterviewSession = require('../models/InterviewSession');
+
+    // 1. Update VideoInterview
+    let videoSession = await VideoInterview.findOne({ sessionId });
+    if (!videoSession && mongoose.Types.ObjectId.isValid(sessionId)) {
+      videoSession = await VideoInterview.findById(sessionId);
+    }
+    if (videoSession) {
+      videoSession.status = 'Terminated';
+      await videoSession.save();
+    }
+
+    // 2. Update parent InterviewSession
+    let parentSession = await InterviewSession.findOne({ interviewId: sessionId });
+    if (!parentSession && mongoose.Types.ObjectId.isValid(sessionId)) {
+      parentSession = await InterviewSession.findById(sessionId);
+    }
+    if (parentSession) {
+      parentSession.status = 'Terminated';
+      await parentSession.save();
+    }
+
+    console.log(`[Video Controller] Session ${sessionId} marked as Terminated (Reason: ${reason || 'User cancelled'})`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Interview session terminated successfully'
     });
   } catch (error) {
     next(error);

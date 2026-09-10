@@ -9,7 +9,8 @@ const {
   uploadVideoFile,
   evaluateSession,
   getReport,
-  getHistory
+  getHistory,
+  terminateSession
 } = require('../controllers/videoController');
 
 const router = express.Router();
@@ -43,6 +44,7 @@ router.use(protect);
 router.post('/start', startSession);
 router.post('/upload', upload.single('video'), uploadVideoFile);
 router.post('/evaluate', evaluateSession);
+router.post('/terminate', terminateSession);
 router.get('/report/:id', getReport);
 router.get('/history', getHistory);
 

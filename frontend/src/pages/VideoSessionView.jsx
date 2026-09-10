@@ -21,6 +21,21 @@ const VideoSessionView = () => {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // Strict Interview Lockdown State Machine (Task 18)
+  const [interviewState, setInterviewState] = useState(document.fullscreenElement ? 'INTERVIEW_ACTIVE' : 'INTERVIEW_PAUSED');
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
+  const [fullscreenExitCount, setFullscreenExitCount] = useState(0);
+  const [lockdownReason, setLockdownReason] = useState(document.fullscreenElement ? '' : 'Fullscreen mode is required to start or resume your video interview.');
+  const isSpeakingRef = useRef(false);
+  const speakTimeoutRef = useRef(null);
+
+  // Device & Hardware status
+  const [hasWebcam, setHasWebcam] = useState(false);
+  const [hasMic, setHasMic] = useState(false);
+  const [hasFace, setHasFace] = useState(false);
+  const [hasEyeContact, setHasEyeContact] = useState(false);
+  const [hasPose, setHasPose] = useState(false);
+
   // Device & Recording States
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTimeSec, setRecordingTimeSec] = useState(0);
@@ -37,11 +52,17 @@ const VideoSessionView = () => {
     currentIndexRef.current = currentIndex;
   }, [currentIndex]);
 
+  const interviewStateRef = useRef(interviewState);
+  useEffect(() => {
+    interviewStateRef.current = interviewState;
+  }, [interviewState]);
+
   const questionsCountRef = useRef(questions.length);
   useEffect(() => {
     questionsCountRef.current = questions.length;
   }, [questions.length]);
 
+  const isSubmittingRef = useRef(false);
   const questionTelemetryRef = useRef([]);
 
   // Transcript answers array
@@ -115,6 +136,7 @@ const VideoSessionView = () => {
   const consecutiveStateFramesRef = useRef(0);
   const isBlinkingRef = useRef(false);
   const blinkStartSecRef = useRef(0);
+  const pendingIncidentRef = useRef(null);
 
   const expressionNeutralFramesRef = useRef(0);
   const expressionSmileFramesRef = useRef(0);
@@ -209,6 +231,119 @@ const VideoSessionView = () => {
     faceLandmarkerRef.current = faceLandmarker;
   }, [faceLandmarker]);
 
+  // Start webcam immediately on mount and keep alive
+  useEffect(() => {
+    initWebcamStream();
+  }, []);
+
+  // Ensure video element always binds active streamRef
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(err => console.log('[Video AI] Video auto-sync play catch:', err));
+    }
+  });
+
+  // Strict Keyboard Lock API for Escape (Chromium)
+  useEffect(() => {
+    if (interviewState === 'INTERVIEW_ACTIVE' && document.fullscreenElement) {
+      if (navigator.keyboard && navigator.keyboard.lock) {
+        navigator.keyboard.lock(['Escape']).catch(err => {
+          console.log('[Lockdown] Keyboard lock for Escape not granted:', err);
+        });
+      }
+    }
+    return () => {
+      if (navigator.keyboard && navigator.keyboard.unlock) {
+        try {
+          navigator.keyboard.unlock();
+        } catch (e) {}
+      }
+    };
+  }, [interviewState]);
+
+  // Strict navigation & reload locking listeners (Task 9, 10, 11, 13)
+  useEffect(() => {
+    if (interviewState === 'INTERVIEW_ACTIVE') {
+      document.body.classList.add('interview-lockdown-active');
+    } else {
+      document.body.classList.remove('interview-lockdown-active');
+    }
+
+    if (interviewState === 'INTERVIEW_ACTIVE') {
+      const handlePopState = (e) => {
+        window.history.pushState(null, '', window.location.href);
+        toast.warning('Browser Back/Forward navigation is locked during the active mock interview.');
+        proctoringEventsRef.current.push({
+          type: 'BROWSER_NAVIGATION_ATTEMPT',
+          startedAt: new Date(),
+          durationMs: 0
+        });
+      };
+      
+      window.history.pushState(null, '', window.location.href);
+      window.addEventListener('popstate', handlePopState);
+
+      const handleBeforeUnload = (e) => {
+        e.preventDefault();
+        e.returnValue = 'Warning: Leaving or reloading the page will pause and potentially invalidate your active session.';
+        proctoringEventsRef.current.push({
+          type: 'PAGE_LEAVE_ATTEMPT',
+          startedAt: new Date(),
+          durationMs: 0
+        });
+        return e.returnValue;
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+
+      const handleKeyDown = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          toast.info('Use the red "Terminate Interview" button at the top to exit.');
+        } else if ((e.ctrlKey && e.key === 'r') || (e.metaKey && e.key === 'r') || e.key === 'F5') {
+          toast.warning('Page refresh is locked during the active interview.');
+        } else {
+          toast.info('Keyboard input is disabled during the video interview.');
+        }
+      };
+      window.addEventListener('keydown', handleKeyDown, true);
+
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+        window.removeEventListener('beforeunload', handleBeforeUnload);
+        window.removeEventListener('keydown', handleKeyDown, true);
+        document.body.classList.remove('interview-lockdown-active');
+      };
+    }
+  }, [interviewState]);
+
+  // Fullscreen change listener (Task 3)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const activeFullscreen = !!document.fullscreenElement;
+      setIsFullscreen(activeFullscreen);
+      
+      if (interviewStateRef.current === 'INTERVIEW_ACTIVE' && !activeFullscreen) {
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason('Fullscreen exited');
+        
+        proctoringEventsRef.current.push({
+          type: 'FULLSCREEN_EXIT',
+          startedAt: new Date(),
+          durationMs: 0
+        });
+        
+        pauseRecording();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
   useEffect(() => {
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       setIsInsecureContext(true);
@@ -260,6 +395,45 @@ const VideoSessionView = () => {
           expressionDistribution: { neutral: 0, smile: 0, frown: 0, surprise: 0 }
         }));
 
+        const savedSession = localStorage.getItem(`video_interview_session_${sessionId}`);
+        if (savedSession) {
+          try {
+            const restored = JSON.parse(savedSession);
+            toast.info('Restored active mock interview session from browser storage.');
+            setCurrentIndex(restored.currentIndex);
+            setTimeLeftSec(restored.timeLeftSec);
+            if (restored.timelineEvents) setTimelineEvents(restored.timelineEvents);
+            if (restored.answers) setAnswers(restored.answers);
+            
+            // Restore refs
+            if (restored.proctoringEvents) proctoringEventsRef.current = restored.proctoringEvents;
+            eyeContactValidFramesRef.current = restored.eyeContactValidFrames || 0;
+            eyeContactUnknownFramesRef.current = restored.eyeContactUnknownFrames || 0;
+            eyeContactRawSumRef.current = restored.eyeContactRawSum || 0;
+            eyeContactSmoothedSumRef.current = restored.eyeContactSmoothedSum || 0;
+            blinkFramesRef.current = restored.blinkFrames || 0;
+            totalFramesRef.current = restored.totalFrames || 0;
+            facePresentFramesRef.current = restored.facePresentFrames || 0;
+            eyeContactFramesRef.current = restored.eyeContactFrames || 0;
+            lookingAwayFramesRef.current = restored.lookingAwayFrames || 0;
+            centerFacingFramesRef.current = restored.centerFacingFrames || 0;
+            totalYawRef.current = restored.totalYaw || 0;
+            totalPitchRef.current = restored.totalPitch || 0;
+            totalRollRef.current = restored.totalRoll || 0;
+            expressionNeutralFramesRef.current = restored.expressionNeutralFrames || 0;
+            expressionSmileFramesRef.current = restored.expressionSmileFrames || 0;
+            expressionFrownFramesRef.current = restored.expressionFrownFrames || 0;
+            expressionSurpriseFramesRef.current = restored.expressionSurpriseFrames || 0;
+            noFaceEventsRef.current = restored.noFaceEvents || 0;
+            multipleFaceEventsRef.current = restored.multipleFaceEvents || 0;
+            lookingAwayEventsRef.current = restored.lookingAwayEvents || 0;
+            tabVisibilityChangesRef.current = restored.tabVisibilityChanges || 0;
+            windowBlurEventsRef.current = restored.windowBlurEvents || 0;
+          } catch (e) {
+            console.error('Failed to parse saved session recovery:', e);
+          }
+        }
+
         if (response.data.status === 'generating' || qList.length === 0) {
           setIsGenerating(true);
           if (!pollIntervalRef.current) {
@@ -284,18 +458,31 @@ const VideoSessionView = () => {
   // Start webcam, microphone, volume meter, and start recording loop
   const initWebcamStream = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480 },
-        audio: true
-      });
-      streamRef.current = stream;
+      let stream = streamRef.current;
+      if (!stream || !stream.active) {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480 },
+          audio: true
+        });
+        streamRef.current = stream;
+        setHasWebcam(true);
+        setHasMic(true);
+      }
+
       if (videoRef.current) {
-        videoRef.current.srcObject = stream;
+        if (videoRef.current.srcObject !== stream) {
+          videoRef.current.srcObject = stream;
+        }
         try {
           await videoRef.current.play();
         } catch (playErr) {
           console.warn('[Video AI] Programmatic video play failed:', playErr);
         }
+      }
+
+      // If already initialized analyser/tracker, don't recreate duplicate loops
+      if (cleanupTrackingRef.current) {
+        return;
       }
 
       // Web Audio level analyzer
@@ -317,7 +504,9 @@ const VideoSessionView = () => {
           recordedChunksRef.current.push(event.data);
         }
       };
-      mediaRecorder.start(1000); // chunk slice every second
+      if (isRecordingRef.current) {
+        mediaRecorder.start(1000); // chunk slice every second
+      }
 
       // Realtime non-verbal metrics MediaPipe & Canvas loop
       const canvas = canvasRef.current;
@@ -330,7 +519,7 @@ const VideoSessionView = () => {
       const prevFaceCountRef = { current: -1 };
 
       const processFrame = () => {
-        if (!isRecordingRef.current) return;
+        if (interviewStateRef.current === 'INTERVIEW_PAUSED' || interviewStateRef.current === 'INTERVIEW_COMPLETED') return;
         
         const video = videoRef.current;
         const landmarkerInstance = faceLandmarkerRef.current;
@@ -447,6 +636,7 @@ const VideoSessionView = () => {
         }
 
         const faceDetected = faceCount > 0;
+        setHasFace(faceDetected);
 
         // 1. FACE PRESENCE STATE MACHINE
         if (!faceDetected) {
@@ -459,6 +649,7 @@ const VideoSessionView = () => {
               setPostureWarning('Face not detected. Please align yourself directly in front of the camera.');
               setGazeStatus('Not available');
               setCurrentEmotion('Not available');
+              setCameraFacingScore(0);
             }
           }
         } else {
@@ -474,6 +665,7 @@ const VideoSessionView = () => {
                 startedAt: new Date(noFaceStartRef.current),
                 durationMs: noFaceDuration
               });
+              addTimelineEvent('NO_FACE', 'Left the camera frame');
             }
             noFaceStartRef.current = null;
           }
@@ -495,6 +687,7 @@ const VideoSessionView = () => {
                 startedAt: new Date(multipleFacesStartRef.current),
                 durationMs: duration
               });
+              addTimelineEvent('MULTIPLE_FACES', 'Multiple faces detected');
             }
             multipleFacesStartRef.current = null;
           }
@@ -526,6 +719,9 @@ const VideoSessionView = () => {
 
           if (alignment === 'Centered') {
             centerFacingFramesRef.current++;
+            setHasPose(true);
+          } else {
+            setHasPose(false);
           }
           setPostureStatus(alignment);
 
@@ -691,6 +887,7 @@ const VideoSessionView = () => {
 
           let rawCameraFacing = Math.max(0, Math.min(100, Math.round(100 - (Math.abs(yaw) * 1.6) - (Math.abs(pitch) * 2.2))));
           smoothedCameraFacingRef.current = alpha * rawCameraFacing + (1 - alpha) * smoothedCameraFacingRef.current;
+          setCameraFacingScore(Math.round(smoothedCameraFacingRef.current));
 
           let rawEyeContact = 0;
           let isGazeContact = true;
@@ -704,6 +901,7 @@ const VideoSessionView = () => {
             eyeContactUnknownFramesRef.current++;
             setEyeContactScore('Not available');
             setGazeStatus('Not available');
+            setHasEyeContact(false);
           } else {
             eyeContactValidFramesRef.current++;
             const poseScore = Math.max(0, Math.min(100, Math.round(100 - (Math.abs(yaw) * 1.8) - (Math.abs(pitch) * 2.4))));
@@ -755,6 +953,7 @@ const VideoSessionView = () => {
             isGazeContact = lastStableEyeContactStateRef.current === 'CONTACT';
             setEyeContactScore(Math.round(smoothedEyeContactRef.current));
             setGazeStatus(isGazeContact ? 'Aligned' : 'Looking Away');
+            setHasEyeContact(isGazeContact);
           }
 
           // 11. PROCTORING TIMELINE INTEGRATION (Transition-based debouncing)
@@ -779,6 +978,7 @@ const VideoSessionView = () => {
                   durationMs: duration,
                   reason: "Sustained gaze deviation"
                 });
+                addTimelineEvent('LOOKING_AWAY', 'Looking away from camera');
               }
               lookingAwayStartRef.current = null;
             }
@@ -893,41 +1093,83 @@ const VideoSessionView = () => {
         }
       };
 
-      // Set up visibility & focus proctoring listeners
+      // Set up visibility & focus proctoring listeners (Deduplicated, Task 8)
       const handleVisibilityChange = () => {
-        if (!isRecordingRef.current) return;
+        if (interviewStateRef.current !== 'INTERVIEW_ACTIVE') return;
+        const now = Date.now();
+        const signal = 'visibilitychange';
+
         if (document.visibilityState === 'hidden') {
           tabVisibilityChangesRef.current++;
-          tabHiddenStartRef.current = Date.now();
+          
+          if (pendingIncidentRef.current && (now - pendingIncidentRef.current.startTime < 200)) {
+            if (!pendingIncidentRef.current.sourceSignals.includes(signal)) {
+              pendingIncidentRef.current.sourceSignals.push(signal);
+            }
+            pendingIncidentRef.current.type = 'TAB_SWITCH';
+          } else {
+            pendingIncidentRef.current = {
+              type: 'TAB_SWITCH',
+              startTime: now,
+              sourceSignals: [signal]
+            };
+            setInterviewState('INTERVIEW_PAUSED');
+            setLockdownReason('Tab Switched');
+            pauseRecording();
+          }
         } else {
-          if (tabHiddenStartRef.current) {
-            const dur = Date.now() - tabHiddenStartRef.current;
+          // Visible again
+          if (pendingIncidentRef.current) {
+            const dur = now - pendingIncidentRef.current.startTime;
             proctoringEventsRef.current.push({
-              type: 'TAB_HIDDEN',
-              startedAt: new Date(tabHiddenStartRef.current),
-              durationMs: dur
+              type: pendingIncidentRef.current.type,
+              startedAt: new Date(pendingIncidentRef.current.startTime),
+              durationMs: dur,
+              metadata: { sourceSignals: pendingIncidentRef.current.sourceSignals }
             });
-            tabHiddenStartRef.current = null;
+            addTimelineEvent(pendingIncidentRef.current.type, `Returned after ${(dur / 1000).toFixed(1)}s`);
+            pendingIncidentRef.current = null;
           }
         }
       };
 
       const handleWindowBlur = () => {
-        if (!isRecordingRef.current) return;
+        if (interviewStateRef.current !== 'INTERVIEW_ACTIVE') return;
+        const now = Date.now();
+        const signal = 'window.blur';
+
         windowBlurEventsRef.current++;
-        windowBlurStartRef.current = Date.now();
+
+        if (pendingIncidentRef.current && (now - pendingIncidentRef.current.startTime < 200)) {
+          if (!pendingIncidentRef.current.sourceSignals.includes(signal)) {
+            pendingIncidentRef.current.sourceSignals.push(signal);
+          }
+        } else {
+          pendingIncidentRef.current = {
+            type: 'WINDOW_BLUR',
+            startTime: now,
+            sourceSignals: [signal]
+          };
+          setInterviewState('INTERVIEW_PAUSED');
+          setLockdownReason('Window Lost Focus');
+          pauseRecording();
+        }
       };
 
       const handleWindowFocus = () => {
-        if (!isRecordingRef.current) return;
-        if (windowBlurStartRef.current) {
-          const dur = Date.now() - windowBlurStartRef.current;
+        if (interviewStateRef.current !== 'INTERVIEW_ACTIVE' && interviewStateRef.current !== 'INTERVIEW_PAUSED') return;
+        const now = Date.now();
+        
+        if (pendingIncidentRef.current) {
+          const dur = now - pendingIncidentRef.current.startTime;
           proctoringEventsRef.current.push({
-            type: 'WINDOW_BLUR',
-            startedAt: new Date(windowBlurStartRef.current),
-            durationMs: dur
+            type: pendingIncidentRef.current.type,
+            startedAt: new Date(pendingIncidentRef.current.startTime),
+            durationMs: dur,
+            metadata: { sourceSignals: pendingIncidentRef.current.sourceSignals }
           });
-          windowBlurStartRef.current = null;
+          addTimelineEvent(pendingIncidentRef.current.type, `Refocused window after ${(dur / 1000).toFixed(1)}s`);
+          pendingIncidentRef.current = null;
         }
       };
 
@@ -965,8 +1207,9 @@ const VideoSessionView = () => {
 
   // Speaks interview question aloud using SpeechSynthesis API
   const speakCurrentQuestion = () => {
-    if (questions.length === 0) return;
-    const currentQ = questions[currentIndex];
+    if (questions.length === 0 || isSubmittingRef.current || interviewStateRef.current !== 'INTERVIEW_ACTIVE') return;
+    const currentQ = questions[currentIndexRef.current];
+    if (!currentQ) return;
     
     // Stop recording state first
     stopUserRecording(false);
@@ -974,16 +1217,25 @@ const VideoSessionView = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       setIsSpeakingQuestion(true);
+      isSpeakingRef.current = true;
       const utterance = new SpeechSynthesisUtterance(currentQ.questionText);
       
       utterance.onend = () => {
         setIsSpeakingQuestion(false);
-        startUserRecording();
+        isSpeakingRef.current = false;
+        if (!isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+          startUserRecording();
+        }
       };
       
       utterance.onerror = (e) => {
-        console.error('TTS error:', e);
         setIsSpeakingQuestion(false);
+        isSpeakingRef.current = false;
+        // Ignore cancellations/interruptions (from question skip or submit)
+        if (e.error === 'canceled' || e.error === 'interrupted' || isSubmittingRef.current || interviewStateRef.current !== 'INTERVIEW_ACTIVE') {
+          return;
+        }
+        console.error('TTS error:', e);
         startUserRecording();
       };
 
@@ -996,15 +1248,24 @@ const VideoSessionView = () => {
 
   // Launch User webcam recorder and STT listener
   const startUserRecording = async () => {
+    if (isSubmittingRef.current || interviewStateRef.current !== 'INTERVIEW_ACTIVE') {
+      return;
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+
     setLiveTranscript('');
     setEditedTranscript('');
     setRecordingTimeSec(0);
     setTimeLeftSec(90);
     setIsRecording(true);
 
+    const qNum = questions[currentIndexRef.current]?.questionNumber;
     const startTime = Date.now();
     setAnswers(prev => prev.map(ans => 
-      ans.questionNumber === questions[currentIndex].questionNumber
+      ans.questionNumber === qNum
         ? { ...ans, startTime }
         : ans
     ));
@@ -1012,18 +1273,39 @@ const VideoSessionView = () => {
     // Initialize media capture
     await initWebcamStream();
 
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+      try {
+        recordedChunksRef.current = [];
+        mediaRecorderRef.current.start(1000);
+      } catch (err) {
+        console.warn('Failed to start MediaRecorder on recording start:', err);
+      }
+    }
+
     // Start timer interval
     timerIntervalRef.current = setInterval(() => {
+      if (isSubmittingRef.current || interviewStateRef.current !== 'INTERVIEW_ACTIVE') {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+        return;
+      }
       setRecordingTimeSec(prev => prev + 1);
       setTimeLeftSec(prev => {
         if (prev <= 1) {
-          clearInterval(timerIntervalRef.current);
+          if (timerIntervalRef.current) {
+            clearInterval(timerIntervalRef.current);
+            timerIntervalRef.current = null;
+          }
           toast.warning("Time limit reached for this question!");
           setTimeout(() => {
-            if (currentIndexRef.current < questionsCountRef.current - 1) {
-              handleNextQuestion();
-            } else {
-              handleSubmitInterview();
+            if (!isSubmittingRef.current) {
+              if (currentIndexRef.current < questionsCountRef.current - 1) {
+                handleNextQuestion();
+              } else {
+                handleSubmitInterview();
+              }
             }
           }, 100);
           return 0;
@@ -1035,6 +1317,10 @@ const VideoSessionView = () => {
     // Initialize SpeechRecognition
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
+      if (recognitionRef.current) {
+        recognitionRef.current.onend = null;
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
@@ -1064,14 +1350,15 @@ const VideoSessionView = () => {
       };
 
       recognition.onend = () => {
-        // restart recognition if recording is still active
-        if (isRecordingRef.current) {
-          recognition.start();
+        if (isRecordingRef.current && !isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+          try { recognition.start(); } catch (e) {}
         }
       };
 
       recognitionRef.current = recognition;
-      recognition.start();
+      try {
+        recognition.start();
+      } catch (e) {}
     }
   };
 
@@ -1085,35 +1372,54 @@ const VideoSessionView = () => {
     setIsRecording(false);
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
     }
     if (recognitionRef.current) {
       recognitionRef.current.onend = null;
-      recognitionRef.current.stop();
-    }
-    if (cleanupTrackingRef.current) {
-      cleanupTrackingRef.current();
-      cleanupTrackingRef.current = null;
+      try { recognitionRef.current.stop(); } catch (e) {}
     }
 
     if (saveAnswer && questions.length > 0) {
-      const qNum = questions[currentIndex].questionNumber;
+      const qNum = questions[currentIndexRef.current]?.questionNumber;
       const endTime = Date.now();
       setAnswers(prev => prev.map(ans => 
         ans.questionNumber === qNum 
-          ? { ...ans, endTime, transcriptText: editedTranscript || liveTranscript || 'No verbal answer recorded.' }
+          ? { ...ans, endTime, transcriptText: editedTranscript || liveTranscript || ans.transcriptText || 'No verbal answer recorded.' }
           : ans
       ));
     }
   };
 
   const handleNextQuestion = () => {
+    if (submitting || isSubmittingRef.current) return;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeakingQuestion(false);
+    isSpeakingRef.current = false;
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
     stopUserRecording(true);
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
+    } else {
+      handleSubmitInterview();
     }
   };
 
   const handlePreviousQuestion = () => {
+    if (submitting || isSubmittingRef.current) return;
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeakingQuestion(false);
+    isSpeakingRef.current = false;
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
     stopUserRecording(true);
     if (currentIndex > 0) {
       setCurrentIndex(prev => prev - 1);
@@ -1122,22 +1428,49 @@ const VideoSessionView = () => {
 
   // Speak question automatically on question index navigation change
   useEffect(() => {
-    if (questions.length > 0) {
-      setTimeout(() => {
-        speakCurrentQuestion();
-      }, 500);
+    if (questions.length > 0 && interviewState === 'INTERVIEW_ACTIVE' && !isSubmittingRef.current) {
+      if (speakTimeoutRef.current) {
+        clearTimeout(speakTimeoutRef.current);
+      }
+      speakTimeoutRef.current = setTimeout(() => {
+        if (!isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+          speakCurrentQuestion();
+        }
+      }, 400);
+      return () => {
+        if (speakTimeoutRef.current) {
+          clearTimeout(speakTimeoutRef.current);
+        }
+      };
     }
-  }, [currentIndex, questions.length]);
+  }, [currentIndex, questions.length, interviewState]);
 
   const cleanupMedia = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
-    if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
     if (recognitionRef.current) {
       recognitionRef.current.onend = null;
-      recognitionRef.current.stop();
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+    }
+    if (cleanupTrackingRef.current) {
+      cleanupTrackingRef.current();
+      cleanupTrackingRef.current = null;
     }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
       audioContextRef.current.close();
@@ -1146,9 +1479,38 @@ const VideoSessionView = () => {
 
   // Package video recorded chunks, upload, evaluate
   const handleSubmitInterview = async () => {
+    if (isSubmittingRef.current || submitting) return;
+    isSubmittingRef.current = true;
+    setSubmitting(true);
+
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeakingQuestion(false);
+    isSpeakingRef.current = false;
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
+
     stopUserRecording(true);
     cleanupMedia();
-    setSubmitting(true);
+
+    // Immediately exit fullscreen, unlock keyboard, and restore normal layout
+    if (navigator.keyboard && navigator.keyboard.unlock) {
+      try {
+        navigator.keyboard.unlock();
+      } catch (e) {}
+    }
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch (fsErr) {
+        console.warn('Exit fullscreen error on submit:', fsErr);
+      }
+    }
+    document.body.classList.remove('interview-lockdown-active');
+    setInterviewState('INTERVIEW_COMPLETED');
 
     try {
       // 1. Package blob
@@ -1292,11 +1654,20 @@ const VideoSessionView = () => {
 
       toast.info('Generating AI Behavioral & Technical Assessment...');
       const evalRes = await axiosInstance.post('/video/evaluate', finalPayload);
-      if (evalRes.data.success) {
+      if (evalRes.data && evalRes.data.success) {
         toast.success('Interview evaluation complete!');
+        localStorage.removeItem(`video_interview_session_${sessionId}`);
+        
+        if (document.fullscreenElement) {
+          try {
+            await document.exitFullscreen();
+          } catch (e) {}
+        }
+        document.body.classList.remove('interview-lockdown-active');
         navigate(`/video-interview/report/${sessionId}`);
       }
     } catch (err) {
+      isSubmittingRef.current = false;
       console.error('[Frontend Debug] Failed to submit mock interview evaluation:', {
         message: err.message,
         status: err.response ? err.response.status : 'N/A',
@@ -1310,6 +1681,144 @@ const VideoSessionView = () => {
     }
   };
 
+  const saveSessionState = (timeLeft) => {
+    localStorage.setItem(`video_interview_session_${sessionId}`, JSON.stringify({
+      currentIndex: currentIndexRef.current,
+      timeLeftSec: timeLeft,
+      timelineEvents,
+      answers,
+      proctoringEvents: proctoringEventsRef.current || [],
+      eyeContactValidFrames: eyeContactValidFramesRef.current,
+      eyeContactUnknownFrames: eyeContactUnknownFramesRef.current,
+      eyeContactRawSum: eyeContactRawSumRef.current,
+      eyeContactSmoothedSum: eyeContactSmoothedSumRef.current,
+      blinkFrames: blinkFramesRef.current,
+      totalFrames: totalFramesRef.current,
+      facePresentFrames: facePresentFramesRef.current,
+      eyeContactFrames: eyeContactFramesRef.current,
+      lookingAwayFrames: lookingAwayFramesRef.current,
+      centerFacingFrames: centerFacingFramesRef.current,
+      totalYaw: totalYawRef.current,
+      totalPitch: totalPitchRef.current,
+      totalRoll: totalRollRef.current,
+      expressionNeutralFrames: expressionNeutralFramesRef.current,
+      expressionSmileFrames: expressionSmileFramesRef.current,
+      expressionFrownFrames: expressionFrownFramesRef.current,
+      expressionSurpriseFrames: expressionSurpriseFramesRef.current,
+      noFaceEvents: noFaceEventsRef.current,
+      multipleFaceEvents: multipleFaceEventsRef.current,
+      lookingAwayEvents: lookingAwayEventsRef.current,
+      tabVisibilityChanges: tabVisibilityChangesRef.current,
+      windowBlurEvents: windowBlurEventsRef.current
+    }));
+  };
+
+  const pauseRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.pause();
+        console.log('[Lockdown] MediaRecorder paused');
+      } catch (e) {
+        console.warn('Failed to pause MediaRecorder:', e);
+      }
+    }
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+  };
+
+  const resumeRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+      try {
+        mediaRecorderRef.current.resume();
+        console.log('[Lockdown] MediaRecorder resumed');
+      } catch (e) {
+        console.warn('Failed to resume MediaRecorder:', e);
+      }
+    }
+    if (isRecordingRef.current && !timerIntervalRef.current) {
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingTimeSec(prev => prev + 1);
+        setTimeLeftSec(prev => {
+          if (prev <= 1) {
+            clearInterval(timerIntervalRef.current);
+            toast.warning("Time limit reached for this question!");
+            setTimeout(() => {
+              if (currentIndexRef.current < questionsCountRef.current - 1) {
+                handleNextQuestion();
+              } else {
+                handleSubmitInterview();
+              }
+            }, 100);
+            return 0;
+          }
+          saveSessionState(prev - 1);
+          return prev - 1;
+        });
+      }, 1000);
+    }
+  };
+
+  const handleTerminateInterview = async () => {
+    const confirmTerm = window.confirm(
+      'Are you sure you want to terminate this interview? Your progress will be marked as "Terminated in between" in your interview history.'
+    );
+    if (!confirmTerm) return;
+
+    try {
+      toast.info('Terminating interview session...');
+      await axiosInstance.post('/video/terminate', { sessionId, reason: 'User terminated in between' });
+    } catch (err) {
+      console.warn('Error sending terminate status:', err);
+    }
+
+    cleanupMedia();
+    localStorage.removeItem(`video_interview_session_${sessionId}`);
+    
+    if (document.fullscreenElement) {
+      try {
+        await document.exitFullscreen();
+      } catch (e) {}
+    }
+    if (navigator.keyboard && navigator.keyboard.unlock) {
+      try {
+        navigator.keyboard.unlock();
+      } catch (e) {}
+    }
+    toast.warning('Interview session terminated.');
+    navigate('/mock-interviews');
+  };
+
+  const handleReturnToInterview = async () => {
+    await requestInterviewFullscreen();
+    if (document.fullscreenElement) {
+      setInterviewState('INTERVIEW_ACTIVE');
+      if (isRecordingRef.current) {
+        resumeRecording();
+      } else {
+        speakCurrentQuestion();
+      }
+    }
+  };
+
+  const requestInterviewFullscreen = async () => {
+    try {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        await elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) {
+        await elem.msRequestFullscreen();
+      }
+      setIsFullscreen(true);
+    } catch (err) {
+      console.error('Fullscreen request rejected:', err);
+      toast.error('Fullscreen request was denied. Fullscreen mode is required to proceed.');
+    }
+  };
+
   if (isGenerating || (questions.length === 0 && loading)) {
     return (
       <div className="container py-5 text-center animate-fade-in" style={{ maxWidth: '600px' }}>
@@ -1320,6 +1829,21 @@ const VideoSessionView = () => {
         <p className="text-muted small mb-4">Please wait a moment while Gemini generates your role-specific interview questions.</p>
         <div className="progress mb-3" style={{ height: '8px' }}>
           <div className="progress-bar progress-bar-striped progress-bar-animated bg-primary" style={{ width: '100%', backgroundColor: 'var(--primary-purple)' }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (submitting) {
+    return (
+      <div className="container py-5 text-center animate-fade-in" style={{ maxWidth: '600px', minHeight: '60vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+        <div className="spinner-border text-primary mb-3" style={{ width: '3.5rem', height: '3.5rem', color: 'var(--primary-purple)' }} role="status">
+          <span className="visually-hidden">Analyzing...</span>
+        </div>
+        <h3 className="fw-bold text-dark mb-2">Analyzing Interview & Generating Report...</h3>
+        <p className="text-muted small mb-4">Please wait while Gemini evaluates your verbal answers, proctoring integrity, and video delivery metrics.</p>
+        <div className="progress w-100 mb-3" style={{ height: '8px' }}>
+          <div className="progress-bar progress-bar-striped progress-bar-animated bg-success" style={{ width: '100%' }} />
         </div>
       </div>
     );
@@ -1339,6 +1863,50 @@ const VideoSessionView = () => {
 
   return (
     <div className="container py-4 text-start">
+      {/* Strict Lockdown Paused Overlay */}
+      {interviewState === 'INTERVIEW_PAUSED' && (
+        <div className="lockdown-paused-overlay">
+          <div className="lockdown-card text-white">
+            <FiAlertCircle className="text-warning display-3 mb-3 animate-pulse" />
+            <h4 className="fw-bold mb-2">Resume Mock Interview</h4>
+            <p className="text-muted small mb-4">
+              {lockdownReason || 'Fullscreen mode is required to start or continue your video interview.'}
+            </p>
+            <div className="d-flex flex-column gap-2">
+              <button 
+                onClick={handleReturnToInterview}
+                className="btn btn-info w-100 fw-bold py-2 rounded-3 text-white"
+              >
+                Resume Interview (Enter Fullscreen)
+              </button>
+              <button 
+                onClick={handleTerminateInterview}
+                className="btn btn-outline-danger w-100 fw-bold py-2 rounded-3"
+              >
+                Terminate Interview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Header Bar with Indicators and Terminate Button */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
+          <span className="text-danger animate-pulse">● REC</span>
+          <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
+          <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+        </div>
+        <button
+          onClick={handleTerminateInterview}
+          className="btn btn-sm btn-danger px-3 py-1.5 rounded-3 fw-bold d-flex align-items-center gap-1.5 shadow"
+          style={{ fontSize: '0.8rem' }}
+          title="Terminate and exit mock interview"
+        >
+          <FiAlertCircle /> Terminate Interview
+        </button>
+      </div>
+
       {isInsecureContext && (
         <div className="alert alert-warning border border-warning rounded-3 p-4 mb-4 text-start animate-fade-in shadow-sm">
           <h4 className="fw-bold text-dark d-flex align-items-center gap-2 mb-2" style={{ fontSize: '1rem' }}>
@@ -1539,16 +2107,6 @@ const VideoSessionView = () => {
             title="Previous Question"
           >
             ←
-          </button>
-          
-          <button
-            onClick={speakCurrentQuestion}
-            className="btn btn-outline-light border-secondary rounded-circle p-2.5 d-flex align-items-center justify-content-center"
-            style={{ width: '40px', height: '40px' }}
-            disabled={submitting}
-            title="Replay AI Question"
-          >
-            <FiVolume2 />
           </button>
 
           {currentIndex < questions.length - 1 ? (

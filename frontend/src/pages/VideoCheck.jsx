@@ -15,6 +15,7 @@ const VideoCheck = () => {
   const [lightingStatus, setLightingStatus] = useState('Checking...');
   const [internetStatus, setInternetStatus] = useState('Checking...');
   const [activeSessionId, setActiveSessionId] = useState(sessionIdParam || '');
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
 
   const [audioLevel, setAudioLevel] = useState(0);
   const [testingDevices, setTestingDevices] = useState(false);
@@ -27,6 +28,32 @@ const VideoCheck = () => {
   const animFrameRef = useRef(null);
 
   const [isInsecureContext, setIsInsecureContext] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const requestFullscreen = async () => {
+    try {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if (elem.webkitRequestFullscreen) {
+        await elem.webkitRequestFullscreen();
+      } else if (elem.msRequestFullscreen) {
+        await elem.msRequestFullscreen();
+      }
+      setIsFullscreen(true);
+    } catch (err) {
+      toast.error('Fullscreen request was denied or blocked by browser.');
+    }
+  };
 
   useEffect(() => {
     // Check if the current context is secure (required for mediaDevices)
@@ -153,10 +180,15 @@ const VideoCheck = () => {
     return () => cleanupDevices();
   }, []);
 
-  const handleStartVideoInterview = () => {
+  const handleStartVideoInterview = async () => {
     if (!hasCameraPermission || !hasMicPermission) {
       toast.warning('Please authorize and test your camera & microphone first.');
       return;
+    }
+    if (!document.fullscreenElement) {
+      try {
+        await requestFullscreen();
+      } catch (err) {}
     }
     cleanupDevices();
     navigate(`/video-interview/session?sessionId=${activeSessionId}`);
@@ -282,23 +314,59 @@ const VideoCheck = () => {
                   {internetStatus}
                 </span>
               </div>
+
+              {/* Fullscreen Mode */}
+              <div className="d-flex align-items-center justify-content-between p-2.5 border rounded-3 bg-light bg-opacity-25">
+                <div className="d-flex align-items-center gap-2.5">
+                  <span className={`p-2 rounded-circle ${isFullscreen ? 'bg-success bg-opacity-10 text-success' : 'bg-secondary bg-opacity-10 text-secondary'}`}>
+                    <FiCheckCircle />
+                  </span>
+                  <span className="fw-semibold text-dark small">Fullscreen Mode</span>
+                </div>
+                {isFullscreen ? (
+                  <span className="badge bg-success bg-opacity-10 text-success">✓ Fullscreen Ready</span>
+                ) : (
+                  <button 
+                    onClick={requestFullscreen} 
+                    className="btn btn-xs btn-outline-primary py-0.5 px-2 rounded" 
+                    style={{ fontSize: '0.75rem' }}
+                  >
+                    Enable Fullscreen
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="d-flex gap-2">
-              <button 
-                onClick={requestDeviceAccess} 
-                className="btn btn-outline-primary py-2.5 flex-grow-1"
-                disabled={testingDevices}
-              >
-                {testingDevices ? 'Testing Setup...' : 'Request Camera & Mic'}
-              </button>
+            <div className="d-flex flex-column gap-2 mt-3">
+              <div className="d-flex gap-2">
+                <button 
+                  onClick={requestDeviceAccess} 
+                  className="btn btn-outline-primary py-2.5 flex-grow-1"
+                  disabled={testingDevices}
+                >
+                  {testingDevices ? 'Testing Setup...' : 'Request Camera & Mic'}
+                </button>
+                {!isFullscreen && (
+                  <button
+                    onClick={requestFullscreen}
+                    className="btn btn-outline-secondary py-2.5 px-3"
+                  >
+                    Enable Fullscreen
+                  </button>
+                )}
+              </div>
               <button 
                 onClick={handleStartVideoInterview} 
-                className="btn btn-primary-purple py-2.5 px-4"
-                disabled={!hasCameraPermission || !hasMicPermission}
+                className="btn btn-primary-purple py-2.5 px-4 w-100 text-white"
+                disabled={!hasCameraPermission || !hasMicPermission || !isFullscreen}
               >
                 Proceed to Interview <FiPlay className="ms-1" />
               </button>
+              {(!hasCameraPermission || !hasMicPermission || !isFullscreen) && (
+                <span className="text-muted small text-center d-block font-monospace" style={{ fontSize: '0.72rem' }}>
+                  * Camera, microphone, and fullscreen are required before proceeding.
+                </span>
+              )}
             </div>
           </div>
         </div>

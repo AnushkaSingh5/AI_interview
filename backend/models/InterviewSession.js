@@ -94,7 +94,7 @@ const InterviewSessionSchema = new mongoose.Schema({
     enum: [
       'Created', 'Generating', 'ReadyToStart', 'Ready', 
       'InstructionsViewed', 'InProgress', 'Submitted', 
-      'AwaitingEvaluation', 'ReportGenerated', 'Completed'
+      'AwaitingEvaluation', 'ReportGenerated', 'Completed', 'Terminated'
     ],
     default: 'Created'
   },

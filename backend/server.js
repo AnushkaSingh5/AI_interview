@@ -30,7 +30,11 @@ connectDB().then(() => {
 const app = express();
 
 // Security Middlewares
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  })
+);
 app.use(
   cors({
     origin: [
@@ -76,7 +80,11 @@ app.use('/api/practice', practiceRoutes);
 app.use('/api/voice', voiceRoutes);
 app.use('/api/learning', learningRoutes);
 app.use('/api/video', videoRoutes);
-app.use('/uploads', express.static(path.join(__dirname, './uploads')));
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  next();
+}, express.static(path.join(__dirname, 'uploads')));
 
 // Centralized Error Handler Middleware (must be after routes)
 app.use(errorHandler);

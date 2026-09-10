@@ -449,8 +449,8 @@ const MockInterviews = () => {
                       )}
                     </td>
                     <td>
-                      <span className={`badge rounded-pill px-2.5 py-1 ${item.status === 'Completed' ? 'bg-success text-success bg-opacity-10' : ['InProgress', 'Created', 'ReadyToStart', 'Ready', 'InstructionsViewed'].includes(item.status) ? 'bg-primary text-primary bg-opacity-10' : 'bg-info text-info bg-opacity-10'}`}>
-                        {item.status === 'Completed' ? 'Graded' : ['InProgress', 'Created', 'ReadyToStart', 'Ready', 'InstructionsViewed'].includes(item.status) ? 'In Progress' : 'Evaluating'}
+                      <span className={`badge rounded-pill px-2.5 py-1 ${item.status === 'Completed' ? 'bg-success text-success bg-opacity-10' : item.status === 'Terminated' ? 'bg-danger text-danger bg-opacity-10' : ['InProgress', 'Created', 'ReadyToStart', 'Ready', 'InstructionsViewed'].includes(item.status) ? 'bg-primary text-primary bg-opacity-10' : 'bg-info text-info bg-opacity-10'}`}>
+                        {item.status === 'Completed' ? 'Graded' : item.status === 'Terminated' ? 'Terminated in between' : ['InProgress', 'Created', 'ReadyToStart', 'Ready', 'InstructionsViewed'].includes(item.status) ? 'In Progress' : 'Evaluating'}
                       </span>
                     </td>
                     <td className="text-end">
