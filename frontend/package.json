@@ -12,6 +12,7 @@
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
     "@mediapipe/tasks-vision": "^0.10.8",
+    "@monaco-editor/react": "^4.7.0",
     "axios": "^1.18.1",
     "bootstrap": "^5.3.8",
     "framer-motion": "^12.42.2",

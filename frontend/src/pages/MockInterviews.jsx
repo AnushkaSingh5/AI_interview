@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   FiPlay, FiClock, FiActivity, FiAward, FiBookOpen, FiUserCheck, FiSliders, 
-  FiSearch, FiFilter, FiTrash2, FiRefreshCw, FiDownload, FiEye, FiX, FiCheck, FiPlus
+  FiSearch, FiFilter, FiTrash2, FiRefreshCw, FiDownload, FiEye, FiX, FiCheck, FiPlus, FiCode
 } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
@@ -184,7 +184,15 @@ const MockInterviews = () => {
     }
   };
 
-  const handleRetake = async (id) => {
+  const handleRetake = async (item) => {
+    const isCoding = (typeof item === 'object') && (item?.interviewMode === 'Coding' || item?.interviewType === 'Coding');
+    if (isCoding) {
+      if (!window.confirm('Launch a new coding interview round?')) return;
+      navigate('/coding-interview/create');
+      return;
+    }
+
+    const id = (typeof item === 'object') ? item.interviewId : item;
     if (!window.confirm('Launch a retake of this interview with identical parameters?')) {
       return;
     }
@@ -243,13 +251,22 @@ const MockInterviews = () => {
           <h2 className="fw-bold text-dark mb-1">AI Mock Interviews</h2>
           <p className="text-muted small mb-0">Launch interactive AI interviews, review historical scores, and compare past performances.</p>
         </div>
-        <button
-          onClick={handleStartInterview}
-          className="btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white"
-        >
-          <FiPlay style={{ fill: 'white' }} />
-          <span>Start Mock Interview</span>
-        </button>
+        <div className="d-flex align-items-center gap-2">
+          <Link
+            to="/coding-interview/create"
+            className="btn btn-dark d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white"
+          >
+            <FiCode />
+            <span>Coding Round</span>
+          </Link>
+          <button
+            onClick={handleStartInterview}
+            className="btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white"
+          >
+            <FiPlay style={{ fill: 'white' }} />
+            <span>Start Mock Interview</span>
+          </button>
+        </div>
       </div>
 
       {/* Stats Summary Grid Cards */}
@@ -335,6 +352,7 @@ const MockInterviews = () => {
               <option value="Technical">Technical</option>
               <option value="HR">HR</option>
               <option value="Mixed">Mixed</option>
+              <option value="Coding">Coding</option>
             </select>
           </div>
           <div className="col-md-2">
@@ -430,8 +448,17 @@ const MockInterviews = () => {
                 {history.map((item, idx) => (
                   <tr key={idx}>
                     <td>
-                      <span className="fw-semibold text-dark d-block">{item.title}</span>
-                      <span className="text-muted small" style={{ fontSize: '0.72rem' }}>{item.interviewId}</span>
+                      <div className="d-flex align-items-center gap-2">
+                        {item.interviewMode === 'Coding' && (
+                          <span className="badge bg-dark text-white rounded-pill px-2 py-0.5" style={{ fontSize: '0.68rem' }}>
+                            <FiCode className="me-1" /> Coding
+                          </span>
+                        )}
+                        <div>
+                          <span className="fw-semibold text-dark d-block">{item.title}</span>
+                          <span className="text-muted small" style={{ fontSize: '0.72rem' }}>{item.interviewId}</span>
+                        </div>
+                      </div>
                     </td>
                     <td>{item.role}</td>
                     <td>{item.company || 'N/A'}</td>
@@ -463,29 +490,35 @@ const MockInterviews = () => {
                                   navigate(`/voice-interview/report/${item.interviewId}`);
                                 } else if (item.interviewMode === 'Video') {
                                   navigate(`/video-interview/report/${item.interviewId}`);
+                                } else if (item.interviewMode === 'Coding' || item.interviewType === 'Coding') {
+                                  navigate(`/coding-interview/report/${item.interviewId}`);
                                 } else {
                                   navigate(`/interview/${item.interviewId}/report`);
                                 }
                               }}
-                              className="btn btn-sm btn-light p-1.5 rounded-circle border"
+                              className="btn btn-sm btn-light p-1.5 rounded-circle border text-primary"
                               title="View Report Card"
                             >
                               <FiEye />
                             </button>
-                            <button
-                              onClick={() => handleOpenCompare(item)}
-                              className="btn btn-sm btn-light p-1.5 rounded-circle border text-info"
-                              title="Compare Report"
-                            >
-                              <FiActivity />
-                            </button>
-                            <button
-                              onClick={() => handleDownloadPdf(item.interviewId)}
-                              className="btn btn-sm btn-light p-1.5 rounded-circle border text-success"
-                              title="Download Report PDF"
-                            >
-                              <FiDownload />
-                            </button>
+                            {item.interviewMode !== 'Coding' && (
+                              <>
+                                <button
+                                  onClick={() => handleOpenCompare(item)}
+                                  className="btn btn-sm btn-light p-1.5 rounded-circle border text-info"
+                                  title="Compare Report"
+                                >
+                                  <FiActivity />
+                                </button>
+                                <button
+                                  onClick={() => handleDownloadPdf(item.interviewId)}
+                                  className="btn btn-sm btn-light p-1.5 rounded-circle border text-success"
+                                  title="Download Report PDF"
+                                >
+                                  <FiDownload />
+                                </button>
+                              </>
+                            )}
                           </>
                         ) : ['Submitted', 'AwaitingEvaluation', 'Evaluating'].includes(item.status) ? (
                           <span className="text-muted small px-2 fw-semibold" style={{ fontSize: '0.74rem' }}>Evaluating...</span>
@@ -496,6 +529,8 @@ const MockInterviews = () => {
                                 navigate(`/voice-interview/session/${item.interviewId}`);
                               } else if (item.interviewMode === 'Video') {
                                 navigate(`/video-interview/session/${item.interviewId}`);
+                              } else if (item.interviewMode === 'Coding' || item.interviewType === 'Coding') {
+                                navigate(`/coding-interview/session/${item.interviewId}`);
                               } else {
                                 navigate(`/interview/${item.interviewId}/active`);
                               }
@@ -512,7 +547,7 @@ const MockInterviews = () => {
                           </span>
                         )}
                         <button
-                          onClick={() => handleRetake(item.interviewId)}
+                          onClick={() => handleRetake(item)}
                           className="btn btn-sm btn-light p-1.5 rounded-circle border text-warning"
                           title="Retake Interview"
                         >

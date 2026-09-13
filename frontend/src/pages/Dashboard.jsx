@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   FiPlay, FiChevronDown, FiCalendar, FiUser, FiUploadCloud, FiCamera,
   FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink,
-  FiBookOpen, FiClock, FiGrid, FiZap
+  FiBookOpen, FiClock, FiGrid, FiZap, FiCode
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -211,10 +211,17 @@ const Dashboard = () => {
           <span className="fw-semibold text-muted">Welcome back, {profile?.fullName?.split(' ')[0] || profile?.name?.split(' ')[0]}! 👋</span>
         </div>
         
-        <div>
+        <div className="d-flex align-items-center gap-2">
+          <Link
+            to="/coding-interview/create"
+            className="btn btn-dark d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white rounded-pill"
+          >
+            <FiCode />
+            <span>Coding Round</span>
+          </Link>
           <button 
             onClick={handleStartInterview} 
-            className="btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm"
+            className="btn btn-primary-purple d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm rounded-pill"
           >
             <FiPlay style={{ fill: 'white' }} />
             <span>Start Mock Interview</span>

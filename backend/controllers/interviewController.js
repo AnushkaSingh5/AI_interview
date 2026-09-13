@@ -185,12 +185,33 @@ exports.updateInterviewSession = async (req, res, next) => {
 
 // @desc    Delete an interview session
 // @route   DELETE /api/interviews/:id
+// @desc    Delete an interview session and all related data
+// @route   DELETE /api/interviews/:id
 // @access  Private
 exports.deleteInterviewSession = async (req, res, next) => {
   try {
-    const session = await findSessionByIdOrCode(req.params.id);
+    let session = await findSessionByIdOrCode(req.params.id);
 
     if (!session) {
+      const CodingInterview = require('../models/CodingInterview');
+      const codingSession = await CodingInterview.findOne({
+        $or: [
+          { sessionId: req.params.id },
+          { _id: mongoose.Types.ObjectId.isValid(req.params.id) ? req.params.id : null }
+        ]
+      });
+
+      if (codingSession) {
+        if (codingSession.user.toString() !== req.user._id.toString()) {
+          return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+        await codingSession.deleteOne();
+        return res.status(200).json({
+          success: true,
+          message: 'Coding interview session deleted successfully'
+        });
+      }
+
       return res.status(404).json({ success: false, message: 'Interview session not found' });
     }
 

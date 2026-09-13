@@ -38,6 +38,9 @@ import VoiceReportView from './pages/VoiceReportView';
 import VideoCheck from './pages/VideoCheck';
 import VideoSessionView from './pages/VideoSessionView';
 import VideoReportView from './pages/VideoReportView';
+import CodingInterviewCreate from './pages/CodingInterviewCreate';
+import CodingInterviewSession from './pages/CodingInterviewSession';
+import CodingReportView from './pages/CodingReportView';
 
 function App() {
   return (
@@ -63,6 +66,10 @@ function App() {
 
           {/* Protected Pages Layout Shell */}
           <Route element={<ProtectedRoute />}>
+            {/* Standalone Fullscreen Live Coding Technical Session (No Sidebar / No HeaderBar) */}
+            <Route path="/coding-interview/session/:id" element={<CodingInterviewSession />} />
+
+            {/* Dashboard Layout Shell with Sidebar & HeaderBar */}
             <Route
               element={
                 <div className="dashboard-layout-container">
@@ -97,6 +104,8 @@ function App() {
               <Route path="/video-interview/session" element={<VideoSessionView />} />
               <Route path="/video-interview/session/:id" element={<VideoSessionView />} />
               <Route path="/video-interview/report/:id" element={<VideoReportView />} />
+              <Route path="/coding-interview/create" element={<CodingInterviewCreate />} />
+              <Route path="/coding-interview/report/:id" element={<CodingReportView />} />
             </Route>
           </Route>
 

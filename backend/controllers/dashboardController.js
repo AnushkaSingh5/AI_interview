@@ -3,6 +3,7 @@ const InterviewSession = require('../models/InterviewSession');
 const InterviewEvaluation = require('../models/InterviewEvaluation');
 const InterviewAnswer = require('../models/InterviewAnswer');
 const QuestionEvaluation = require('../models/QuestionEvaluation');
+const CodingInterview = require('../models/CodingInterview');
 
 // Helper to calculate streaks dynamically
 const calculateStreak = async (userId) => {
@@ -25,7 +26,12 @@ const calculateStreak = async (userId) => {
       status: 'Completed'
     }).select('completedAt updatedAt createdAt');
 
-    const allSessions = [...completedSessions, ...completedVideo, ...completedVoice];
+    const completedCoding = await CodingInterview.find({
+      user: userId,
+      status: 'Completed'
+    }).select('completedAt updatedAt createdAt');
+
+    const allSessions = [...completedSessions, ...completedVideo, ...completedVoice, ...completedCoding];
 
     const validDates = allSessions
       .map(s => s.completedAt || s.updatedAt || s.createdAt)
@@ -111,6 +117,15 @@ exports.getDashboardSummary = async (req, res, next) => {
       }
     ]);
 
+    const completedCoding = await CodingInterview.find({
+      user: userId,
+      status: 'Completed'
+    });
+
+    const codingScores = completedCoding
+      .map(c => c.overallScore)
+      .filter(s => s !== null && s !== undefined && !isNaN(s));
+
     const totalAnswersCount = await InterviewAnswer.countDocuments({ user: userId });
     const practiceStats = await InterviewAnswer.aggregate([
       { $match: { user: userId } },
@@ -128,13 +143,31 @@ exports.getDashboardSummary = async (req, res, next) => {
     const { currentStreak, longestStreak } = await calculateStreak(userId);
 
     const s = stats[0] || {};
+    const evalCount = s.count || 0;
+    const codingCount = codingScores.length;
+    const totalCompleted = evalCount + codingCount;
+
+    let overallAverage = 0;
+    if (totalCompleted > 0) {
+      const evalTotal = (s.avgScore || 0) * evalCount;
+      const codingTotal = codingScores.reduce((acc, v) => acc + v, 0);
+      overallAverage = Math.round((evalTotal + codingTotal) / totalCompleted);
+    }
+
+    const allScores = [
+      ...(s.maxScore !== undefined && evalCount > 0 ? [s.maxScore] : []),
+      ...codingScores
+    ];
+    const highestScore = allScores.length > 0 ? Math.max(...allScores) : (s.maxScore || 0);
+    const lowestScore = allScores.length > 0 ? Math.min(...allScores) : (s.minScore || 0);
+
     res.status(200).json({
       success: true,
       summary: {
-        overallAverageScore: Math.round(s.avgScore || 0),
-        highestScore: s.maxScore || 0,
-        lowestScore: s.minScore || 0,
-        interviewsCompleted: s.count || 0,
+        overallAverageScore: overallAverage,
+        highestScore: highestScore,
+        lowestScore: lowestScore,
+        interviewsCompleted: totalCompleted,
         questionsAnswered: totalAnswersCount,
         hoursPracticed: hoursPracticed,
         currentStreak,
@@ -159,6 +192,10 @@ exports.getInterviewHistory = async (req, res, next) => {
     const { search, role, company, difficulty, interviewType, status, minScore, maxScore, startDate, endDate, sortBy = 'createdAt', sortOrder = 'desc', page = 1, limit = 10 } = req.query;
 
     const query = { user: userId };
+    const codingQuery = { user: userId };
+
+    const shouldIncludeCoding = !interviewType || interviewType === 'Coding' || interviewType === 'All';
+    const shouldIncludeRegular = !interviewType || interviewType !== 'Coding';
 
     if (search) {
       query.$or = [
@@ -166,17 +203,46 @@ exports.getInterviewHistory = async (req, res, next) => {
         { company: { $regex: search, $options: 'i' } },
         { title: { $regex: search, $options: 'i' } }
       ];
+      codingQuery.$or = [
+        { role: { $regex: search, $options: 'i' } },
+        { title: { $regex: search, $options: 'i' } },
+        { topic: { $regex: search, $options: 'i' } }
+      ];
     }
-    if (role) query.role = { $regex: role, $options: 'i' };
+    if (role) {
+      query.role = { $regex: role, $options: 'i' };
+      codingQuery.role = { $regex: role, $options: 'i' };
+    }
     if (company) query.company = { $regex: company, $options: 'i' };
-    if (difficulty) query.difficulty = difficulty;
-    if (interviewType) query.interviewType = interviewType;
-    if (status) query.status = status;
+    if (difficulty) {
+      query.difficulty = difficulty;
+      codingQuery.difficulty = difficulty;
+    }
+    if (interviewType && interviewType !== 'Coding' && interviewType !== 'All') {
+      query.interviewType = interviewType;
+    }
+    if (status) {
+      query.status = status;
+      if (status === 'Completed') {
+        codingQuery.status = 'Completed';
+      } else if (status === 'Terminated') {
+        codingQuery.status = { $in: ['Terminated in between', 'In Progress'] };
+      } else if (status === 'AwaitingEvaluation') {
+        codingQuery.status = 'None_Match';
+      }
+    }
 
     if (startDate || endDate) {
       query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      codingQuery.createdAt = {};
+      if (startDate) {
+        query.createdAt.$gte = new Date(startDate);
+        codingQuery.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        query.createdAt.$lte = new Date(endDate);
+        codingQuery.createdAt.$lte = new Date(endDate);
+      }
     }
 
     if (minScore || maxScore) {
@@ -188,80 +254,122 @@ exports.getInterviewHistory = async (req, res, next) => {
       const matchingEvals = await InterviewEvaluation.find(scoreQuery).select('sessionId');
       const sessionIds = matchingEvals.map(e => e.sessionId);
       query._id = { $in: sessionIds };
+
+      codingQuery.overallScore = {};
+      if (minScore) codingQuery.overallScore.$gte = Number(minScore);
+      if (maxScore) codingQuery.overallScore.$lte = Number(maxScore);
     }
 
     const pageNum = Math.max(1, parseInt(page));
     const limitNum = Math.max(1, parseInt(limit));
     const skip = (pageNum - 1) * limitNum;
 
-    const sortObj = {};
-    sortObj[sortBy] = sortOrder === 'asc' ? 1 : -1;
-
-    const total = await InterviewSession.countDocuments(query);
-    const sessions = await InterviewSession.find(query)
-      .sort(sortObj)
-      .skip(skip)
-      .limit(limitNum);
-
     const VoiceInterview = require('../models/VoiceInterview');
     const VideoInterview = require('../models/VideoInterview');
-    const sessionIds = sessions.map(s => s._id);
-    const evaluations = await InterviewEvaluation.find({ sessionId: { $in: sessionIds } });
-    const voiceInterviews = await VoiceInterview.find({ user: userId });
-    const videoInterviews = await VideoInterview.find({ user: userId });
 
-    const history = sessions.map(s => {
-      const matchedEval = evaluations.find(e => e.sessionId.toString() === s._id.toString());
-      const matchedVoice = voiceInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
-      const matchedVideo = videoInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
+    let mappedSessions = [];
+    if (shouldIncludeRegular) {
+      const sessions = await InterviewSession.find(query);
+      const sessionIds = sessions.map(s => s._id);
+      const evaluations = await InterviewEvaluation.find({ sessionId: { $in: sessionIds } });
+      const voiceInterviews = await VoiceInterview.find({ user: userId });
+      const videoInterviews = await VideoInterview.find({ user: userId });
 
-      const isCompleted = s.status === 'Completed' || 
-                          (matchedVoice && matchedVoice.status === 'Completed') || 
-                          (matchedVideo && matchedVideo.status === 'Completed');
-      const isEvaluating = ['Submitted', 'AwaitingEvaluation', 'Evaluating', 'ReportGenerated'].includes(s.status);
+      mappedSessions = sessions.map(s => {
+        const matchedEval = evaluations.find(e => e.sessionId.toString() === s._id.toString());
+        const matchedVoice = voiceInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
+        const matchedVideo = videoInterviews.find(v => v.sessionId === s.interviewId || (v._id && v._id.toString() === s._id.toString()));
 
-      const score = matchedEval ? matchedEval.overallScore : 
-                    (matchedVoice ? matchedVoice.overallScore : 
-                    (matchedVideo ? matchedVideo.overallScore : (s.overallScore || 0)));
+        const isCompleted = s.status === 'Completed' || 
+                            (matchedVoice && matchedVoice.status === 'Completed') || 
+                            (matchedVideo && matchedVideo.status === 'Completed');
+        const isEvaluating = ['Submitted', 'AwaitingEvaluation', 'Evaluating', 'ReportGenerated'].includes(s.status);
 
-      // If completed -> 'Completed' (Graded)
-      // Else if evaluating -> 'Evaluating'
-      // Else -> 'Terminated' ("Terminated in between" for all unfinished sessions across all modes)
-      const finalStatus = isCompleted ? 'Completed' : (isEvaluating ? 'Evaluating' : 'Terminated');
+        const score = matchedEval ? matchedEval.overallScore : 
+                      (matchedVoice ? matchedVoice.overallScore : 
+                      (matchedVideo ? matchedVideo.overallScore : (s.overallScore || 0)));
 
-      const resumeCount = Math.max(
-        s.resumedTerminatedCount || 0,
-        matchedVoice ? (matchedVoice.resumedTerminatedCount || 0) : 0,
-        matchedVideo ? (matchedVideo.resumedTerminatedCount || 0) : 0
-      );
-      const canResume = !isCompleted && !isEvaluating && resumeCount < 1;
+        const finalStatus = isCompleted ? 'Completed' : (isEvaluating ? 'Evaluating' : 'Terminated');
 
-      console.log(`[History] Mode: ${s.interviewMode || 'Text'}, Status: ${finalStatus}, ResumedCount: ${resumeCount}, CanResume: ${canResume}, Code: ${s.interviewId}`);
+        const resumeCount = Math.max(
+          s.resumedTerminatedCount || 0,
+          matchedVoice ? (matchedVoice.resumedTerminatedCount || 0) : 0,
+          matchedVideo ? (matchedVideo.resumedTerminatedCount || 0) : 0
+        );
+        const canResume = !isCompleted && !isEvaluating && resumeCount < 1;
 
-      return {
-        _id: s._id,
-        interviewId: s.interviewId,
-        title: s.title,
-        role: s.role,
-        company: s.company,
-        difficulty: s.difficulty,
-        interviewType: s.interviewType,
-        interviewMode: s.interviewMode || 'Text',
-        questionCount: s.questionCount,
-        status: finalStatus,
-        completedAt: s.completedAt || (matchedVoice ? matchedVoice.completedAt : null) || (matchedVideo ? matchedVideo.completedAt : null) || s.submittedAt || s.updatedAt,
-        overallScore: isCompleted ? (score !== null && score !== undefined ? score : 0) : 0,
-        resumedTerminatedCount: resumeCount,
-        canResume: canResume
-      };
+        return {
+          _id: s._id,
+          interviewId: s.interviewId,
+          title: s.title,
+          role: s.role,
+          company: s.company || 'N/A',
+          difficulty: s.difficulty,
+          interviewType: s.interviewType,
+          interviewMode: s.interviewMode || 'Text',
+          questionCount: s.questionCount,
+          status: finalStatus,
+          completedAt: s.completedAt || (matchedVoice ? matchedVoice.completedAt : null) || (matchedVideo ? matchedVideo.completedAt : null) || s.submittedAt || s.updatedAt || s.createdAt,
+          createdAt: s.createdAt,
+          overallScore: isCompleted ? (score !== null && score !== undefined ? score : 0) : 0,
+          resumedTerminatedCount: resumeCount,
+          canResume: canResume
+        };
+      });
+    }
+
+    let mappedCoding = [];
+    if (shouldIncludeCoding) {
+      const codingSessions = await CodingInterview.find(codingQuery);
+      mappedCoding = codingSessions.map(c => {
+        const isCompleted = c.status === 'Completed';
+        const resumeCount = c.resumedTerminatedCount || c.resumedCount || 0;
+        const canResume = !isCompleted && resumeCount < 1;
+        const finalStatus = isCompleted ? 'Completed' : 'Terminated';
+        const score = isCompleted ? (c.overallScore !== null && c.overallScore !== undefined ? c.overallScore : 0) : 0;
+
+        return {
+          _id: c._id,
+          interviewId: c.sessionId,
+          title: c.title || `${c.role} - ${c.topic || 'Algorithms'} Coding Round`,
+          role: c.role || 'Software Engineer',
+          company: 'Coding Round',
+          difficulty: c.difficulty || 'Medium',
+          interviewType: 'Coding',
+          interviewMode: 'Coding',
+          questionCount: (c.problems || []).length || 1,
+          status: finalStatus,
+          completedAt: c.completedAt || c.updatedAt || c.createdAt,
+          createdAt: c.createdAt,
+          overallScore: score,
+          resumedTerminatedCount: resumeCount,
+          canResume: canResume
+        };
+      });
+    }
+
+    // Combine and apply status filtering if needed
+    let combined = [...mappedSessions, ...mappedCoding];
+    if (status) {
+      combined = combined.filter(item => item.status === status);
+    }
+
+    // Sort
+    combined.sort((a, b) => {
+      const timeA = new Date(a[sortBy] || a.completedAt || a.createdAt || 0).getTime();
+      const timeB = new Date(b[sortBy] || b.completedAt || b.createdAt || 0).getTime();
+      return sortOrder === 'asc' ? timeA - timeB : timeB - timeA;
     });
+
+    const total = combined.length;
+    const paginatedHistory = combined.slice(skip, skip + limitNum);
 
     res.status(200).json({
       success: true,
       total,
       page: pageNum,
-      pages: Math.ceil(total / limitNum),
-      history
+      pages: Math.ceil(total / limitNum) || 1,
+      history: paginatedHistory
     });
   } catch (error) {
     next(error);
@@ -300,15 +408,21 @@ exports.getAnalytics = async (req, res, next) => {
       }
     ]);
 
-    const typeDistribution = await InterviewSession.aggregate([
-      { $match: { user: userId, status: 'Completed' } },
-      {
-        $group: {
-          _id: "$interviewType",
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+    const completedCoding = await CodingInterview.find({
+      user: userId,
+      status: 'Completed'
+    });
+
+    const codingTrends = completedCoding.map(c => ({
+      overallScore: c.overallScore || 0,
+      createdAt: c.createdAt
+    }));
+    const combinedTrends = [...trends, ...codingTrends].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    const typeDist = typeDistribution.map(t => ({ name: t._id, value: t.count }));
+    if (completedCoding.length > 0) {
+      typeDist.push({ name: 'Coding', value: completedCoding.length });
+    }
 
     const sixMonthsAgo = new Date();
     sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
@@ -336,9 +450,9 @@ exports.getAnalytics = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      trends,
+      trends: combinedTrends,
       categoryAverages: avgScores[0] || { technical: 0, hr: 0, communication: 0, confidence: 0 },
-      typeDistribution: typeDistribution.map(t => ({ name: t._id, value: t.count })),
+      typeDistribution: typeDist,
       monthlyCounts: monthlyCounts.map(m => {
         const date = new Date(m._id.year, m._id.month - 1);
         return {
