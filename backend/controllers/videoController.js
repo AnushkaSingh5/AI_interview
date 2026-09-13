@@ -69,6 +69,27 @@ const calculateInterviewScore = ({
   const answeredQuestions = evaluatedQuestions.filter(q => q.answer && q.answer.answered === true).length;
   const answerCoverage = totalQuestions > 0 ? Math.round((answeredQuestions / totalQuestions) * 100) : 0;
 
+  // RULE 1: Hard Zero if 0 questions answered - do not count or award points for anything else
+  if (answeredQuestions === 0) {
+    return {
+      totalQuestions,
+      answeredQuestions: 0,
+      answerCoverage: 0,
+      technicalQuality: 0,
+      technicalScore: 0,
+      communicationScore: 0,
+      voiceScore: 0,
+      videoDeliveryScore: 0,
+      proctoringScore: 0,
+      overallScore: 0,
+      overallEyePct: 0,
+      overallCenterPct: 0,
+      overallFacePct: 0,
+      overallExprPct: 0,
+      confidenceScore: 0
+    };
+  }
+
   // 1. Technical Quality & Technical Score
   const answeredList = evaluatedQuestions.filter(q => q.answer && q.answer.answered === true);
   const technicalQuality = answeredList.length > 0
@@ -132,37 +153,32 @@ const calculateInterviewScore = ({
   // 5. Final Overall Score Aggregation
   let overallScore = 0;
 
-  // RULE 1: Hard Zero if 0 questions answered
-  if (answeredQuestions === 0) {
-    overallScore = 0;
-  } else {
-    // RULE 2: Weighted Formula (Technical 60%, Comm 15%, Voice 5%, Video 10%, Proctoring 10%)
-    const rawOverall = (
-      (technicalScore * 0.60) +
-      (communicationScore * 0.15) +
-      (voiceScore * 0.05) +
-      (videoDeliveryScore * 0.10) +
-      (proctoringScore * 0.10)
-    );
+  // RULE 2: Weighted Formula (Technical 60%, Comm 15%, Voice 5%, Video 10%, Proctoring 10%)
+  const rawOverall = (
+    (technicalScore * 0.60) +
+    (communicationScore * 0.15) +
+    (voiceScore * 0.05) +
+    (videoDeliveryScore * 0.10) +
+    (proctoringScore * 0.10)
+  );
 
-    let finalScore = Math.round(rawOverall);
+  let finalScore = Math.round(rawOverall);
 
-    // RULE 3: Hard Caps for Low Coverage / Low Technical Correctness
-    if (answerCoverage <= 20) {
-      finalScore = Math.min(25, finalScore);
-    } else if (answerCoverage <= 40) {
-      finalScore = Math.min(45, finalScore);
-    }
-
-    if (technicalScore < 30) {
-      finalScore = Math.min(40, finalScore);
-    }
-    if (technicalScore < 15) {
-      finalScore = Math.min(20, finalScore);
-    }
-
-    overallScore = Math.max(0, Math.min(100, finalScore));
+  // RULE 3: Hard Caps for Low Coverage / Low Technical Correctness
+  if (answerCoverage <= 20) {
+    finalScore = Math.min(25, finalScore);
+  } else if (answerCoverage <= 40) {
+    finalScore = Math.min(45, finalScore);
   }
+
+  if (technicalScore < 30) {
+    finalScore = Math.min(40, finalScore);
+  }
+  if (technicalScore < 15) {
+    finalScore = Math.min(20, finalScore);
+  }
+
+  overallScore = Math.max(0, Math.min(100, finalScore));
 
   return {
     totalQuestions,
@@ -642,7 +658,7 @@ exports.evaluateSession = async (req, res, next) => {
       const match = (aiAnalysis.questionEvaluations || []).find(e => e.questionNumber === ans.questionNumber);
 
       if (!ansCheck.answered) {
-        // Question was not answered verbally
+        // Question was not answered verbally - strictly 0 points across all criteria
         return {
           questionNumber: ans.questionNumber,
           topic: ans.topic || 'General',
@@ -670,14 +686,14 @@ exports.evaluateSession = async (req, res, next) => {
             weaknesses: ['No verbal answer was spoken or recorded for this question.']
           },
           video: {
-            facePresencePercentage: qFace,
-            cameraAlignmentPercentage: qCenter,
-            eyeContactPercentage: qEye,
-            expressionDistribution: qMetrics.expressionDistribution || { neutral: 80, smile: 10, frown: 5, surprise: 5 },
-            headPoseDistribution: { neutral: qCenter, active: 100 - qCenter },
+            facePresencePercentage: 0,
+            cameraAlignmentPercentage: 0,
+            eyeContactPercentage: 0,
+            expressionDistribution: { neutral: 0, smile: 0, frown: 0, surprise: 0 },
+            headPoseDistribution: { neutral: 0, active: 0 },
             fillerWordCount: 0,
             speakingRate: 0,
-            videoDeliveryScore: qVideoScore
+            videoDeliveryScore: 0
           },
           proctoring: {
             events: qEvents.map(e => ({
@@ -686,7 +702,7 @@ exports.evaluateSession = async (req, res, next) => {
               description: e.description,
               durationMs: e.durationMs || 2000
             })),
-            proctoringScore: qProcScore
+            proctoringScore: 0
           },
           finalQuestionScore: 0
         };
@@ -758,7 +774,20 @@ exports.evaluateSession = async (req, res, next) => {
 
     session.transcript = evaluatedQuestions;
     session.timeline = timeline || [];
-    if (videoMetrics) {
+    if (scoreResult.answeredQuestions === 0) {
+      session.videoMetrics = {
+        eyeContactPercentage: 0,
+        centerFacingPercentage: 0,
+        facePresencePercentage: 0,
+        lookingAwayPercentage: 0,
+        expressionDistribution: { neutral: 0, smile: 0, thinking: 0, speaking: 0, confused: 0, frown: 0, surprise: 0 },
+        noFaceEvents: videoMetrics?.noFaceEvents || 0,
+        lookingAwayEvents: videoMetrics?.lookingAwayEvents || 0,
+        multipleFaceEvents: videoMetrics?.multipleFaceEvents || 0,
+        tabVisibilityChanges: videoMetrics?.tabVisibilityChanges || 0,
+        prohibitedObjectEvents: videoMetrics?.prohibitedObjectEvents || 0
+      };
+    } else if (videoMetrics) {
       session.videoMetrics = videoMetrics;
     }
 
@@ -778,17 +807,26 @@ exports.evaluateSession = async (req, res, next) => {
     session.fillerWords = scoreResult.answeredQuestions > 0 ? (fillerWords || countFillerWords(answers.map(a => a.transcriptText).join(' '))) : 0;
     session.speakingSpeed = scoreResult.answeredQuestions > 0 ? (speakingSpeed || 120) : 0;
 
-    session.bodyLanguage = {
+    session.bodyLanguage = scoreResult.answeredQuestions > 0 ? {
       posture: scoreResult.overallCenterPct > 75 ? 'Good Posture' : 'Leaning / Asymmetric',
       headMovement: videoMetrics && Math.abs(videoMetrics.averageYaw) > 10 ? 'High' : 'Normal',
       smileFrequency: videoMetrics && videoMetrics.expressionDistribution && videoMetrics.expressionDistribution.smile > 20 ? 'High' : 'Normal'
+    } : {
+      posture: 'N/A',
+      headMovement: 'N/A',
+      smileFrequency: 'N/A'
     };
 
-    session.emotions = emotions || {
+    session.emotions = scoreResult.answeredQuestions > 0 ? (emotions || {
       happy: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.smile : 10,
       neutral: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.neutral : 80,
       surprised: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.surprise : 5,
       nervous: videoMetrics && videoMetrics.expressionDistribution ? videoMetrics.expressionDistribution.frown : 5
+    }) : {
+      happy: 0,
+      neutral: 0,
+      surprised: 0,
+      nervous: 0
     };
 
     session.report = {
@@ -1038,6 +1076,10 @@ exports.terminateSession = async (req, res, next) => {
     }
     if (parentSession) {
       parentSession.status = 'Terminated';
+      parentSession.completedAt = new Date();
+      if (videoSession && videoSession.resumedTerminatedCount) {
+        parentSession.resumedTerminatedCount = videoSession.resumedTerminatedCount;
+      }
       await parentSession.save();
     }
 

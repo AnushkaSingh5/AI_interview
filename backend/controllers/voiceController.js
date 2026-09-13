@@ -180,6 +180,15 @@ exports.startVoiceSession = async (req, res, next) => {
     const { parentSession, voiceSession: syncedVoiceSession, questionsCount } = await syncVoiceSessionQuestions(sessionCode, userId);
 
     if (syncedVoiceSession) {
+      if (syncedVoiceSession.status === 'Terminated' && (syncedVoiceSession.resumedTerminatedCount || 0) >= 1) {
+        return res.status(400).json({
+          success: false,
+          status: 'terminated_limit_reached',
+          canResume: false,
+          message: 'This voice interview was terminated and has already used its one-time resume limit. Please retake the interview.'
+        });
+      }
+
       if (questionsCount === 0 && parentSession && (parentSession.status === 'Creating' || parentSession.status === 'Generating')) {
         return res.status(200).json({
           success: true,
@@ -290,33 +299,46 @@ exports.evaluateVoiceQuestion = async (req, res, next) => {
       const fillerData = detectFillerWords(finalTranscript);
 
       let evalResult = null;
-      try {
-        evalResult = await aiService.evaluateVoiceAnswer({
-          questionText: questionItem.questionText,
-          topic: questionItem.topic,
-          transcriptText: finalTranscript,
-          wordCount,
-          wpm: speakingSpeedWpm,
-          fillerCount: fillerData.count
-        });
-      } catch (err) {
-        console.warn('[Voice AI] Answer evaluation fallback:', err.message);
-      }
-
-      if (!evalResult) {
-        const baseScore = Math.min(10, Math.max(4, Math.floor(wordCount / 10) + 4));
+      if (wordCount === 0 || !finalTranscript || finalTranscript.trim().length === 0) {
         evalResult = {
-          score: baseScore,
-          technicalScore: baseScore * 10,
-          communicationScore: fillerData.count < 3 ? 90 : 70,
-          fluencyScore: speakingSpeedWpm >= 110 && speakingSpeedWpm <= 160 ? 88 : 75,
-          confidenceScore: wordCount > 20 ? 85 : 65,
-          feedback: wordCount > 15
-            ? 'Good verbal answer provided. Keep your speaking speed steady and minimize filler words.'
-            : 'Short verbal answer. Elaborate further on core technical concepts to boost confidence score.',
-          idealAnswer: `An ideal response for "${questionItem.questionText}" clearly presents key architectural concepts and uses confident vocal delivery.`,
-          communicationTips: ['Pace your words steadily around 130-150 WPM.', 'Pause silently instead of using filler words like "um" or "like".']
+          score: 0,
+          technicalScore: 0,
+          communicationScore: 0,
+          fluencyScore: 0,
+          confidenceScore: 0,
+          feedback: 'No verbal answer was recorded for this question.',
+          idealAnswer: questionItem.expectedAnswer || `An ideal response for "${questionItem.questionText}" clearly presents key architectural concepts and uses confident vocal delivery.`,
+          communicationTips: ['Speak clearly into the microphone.', 'Provide verbal answers for all questions.']
         };
+      } else {
+        try {
+          evalResult = await aiService.evaluateVoiceAnswer({
+            questionText: questionItem.questionText,
+            topic: questionItem.topic,
+            transcriptText: finalTranscript,
+            wordCount,
+            wpm: speakingSpeedWpm,
+            fillerCount: fillerData.count
+          });
+        } catch (err) {
+          console.warn('[Voice AI] Answer evaluation fallback:', err.message);
+        }
+
+        if (!evalResult) {
+          const baseScore = Math.min(10, Math.max(4, Math.floor(wordCount / 10) + 4));
+          evalResult = {
+            score: baseScore,
+            technicalScore: baseScore * 10,
+            communicationScore: fillerData.count < 3 ? 90 : 70,
+            fluencyScore: speakingSpeedWpm >= 110 && speakingSpeedWpm <= 160 ? 88 : 75,
+            confidenceScore: wordCount > 20 ? 85 : 65,
+            feedback: wordCount > 15
+              ? 'Good verbal answer provided. Keep your speaking speed steady and minimize filler words.'
+              : 'Short verbal answer. Elaborate further on core technical concepts to boost confidence score.',
+            idealAnswer: `An ideal response for "${questionItem.questionText}" clearly presents key architectural concepts and uses confident vocal delivery.`,
+            communicationTips: ['Pace your words steadily around 130-150 WPM.', 'Pause silently instead of using filler words like "um" or "like".']
+          };
+        }
       }
 
       // ATOMIC UPDATE: Replace document.save() with findOneAndUpdate and $set positional operator
@@ -335,10 +357,10 @@ exports.evaluateVoiceQuestion = async (req, res, next) => {
             "questions.$.fillerWordsCount": fillerData.count,
             "questions.$.fillerWordsDetected": fillerData.detected,
             "questions.$.score": evalResult.score,
-            "questions.$.technicalScore": evalResult.technicalScore || evalResult.score * 10,
-            "questions.$.communicationScore": evalResult.communicationScore || 80,
-            "questions.$.fluencyScore": evalResult.fluencyScore || 80,
-            "questions.$.confidenceScore": evalResult.confidenceScore || 80,
+            "questions.$.technicalScore": evalResult.technicalScore !== undefined ? evalResult.technicalScore : 0,
+            "questions.$.communicationScore": evalResult.communicationScore !== undefined ? evalResult.communicationScore : 0,
+            "questions.$.fluencyScore": evalResult.fluencyScore !== undefined ? evalResult.fluencyScore : 0,
+            "questions.$.confidenceScore": evalResult.confidenceScore !== undefined ? evalResult.confidenceScore : 0,
             "questions.$.feedback": evalResult.feedback,
             "questions.$.idealAnswer": evalResult.idealAnswer,
             "questions.$.communicationTips": evalResult.communicationTips || []
@@ -378,6 +400,73 @@ exports.compileVoiceReport = async (req, res, next) => {
 
       const questions = voiceSession.questions;
       const totalQuestionsCount = Math.max(1, questions.length);
+      const answered = questions.filter(q => (q.wordCount || 0) > 0);
+
+      // SHORT-CIRCUIT: If no verbal answers were recorded across the entire session, strictly assign 0 points across all metrics
+      if (answered.length === 0) {
+        const updatedSession = await VoiceInterview.findOneAndUpdate(
+          { _id: voiceSession._id },
+          {
+            $set: {
+              overallScore: 0,
+              technicalScore: 0,
+              communicationScore: 0,
+              confidenceScore: 0,
+              fluencyScore: 0,
+              averageWpm: 0,
+              totalFillerWords: 0,
+              speakingPace: 'Silent',
+              grammarObservations: ['No verbal answers were spoken during this session.'],
+              improvementSuggestions: [
+                'Speak your responses clearly into the microphone.',
+                'Ensure your microphone is properly connected and unmuted.'
+              ],
+              overallFeedback: 'No verbal answers were recorded during this voice interview session. 0 points awarded across all criteria.',
+              strengths: [],
+              focusGaps: ['Candidate did not provide verbal answers to any interview questions.'],
+              recommendations: ['Attempt all questions verbally.', 'Check audio input settings before starting.'],
+              learningRoadmap: [],
+              skillHeatmap: [],
+              status: 'Completed',
+              completedAt: new Date()
+            }
+          },
+          { new: true }
+        );
+
+        // Sync parent InterviewSession status and overallScore to Completed
+        const isMongoId = mongoose.Types.ObjectId.isValid(sessionId) && String(new mongoose.Types.ObjectId(sessionId)) === String(sessionId);
+        await InterviewSession.updateOne(
+          {
+            $or: [
+              { interviewId: sessionId },
+              { interviewId: voiceSession.sessionId },
+              ...(isMongoId ? [{ _id: sessionId }] : [])
+            ],
+            user: req.user._id
+          },
+          {
+            $set: {
+              status: 'Completed',
+              progress: 100,
+              overallScore: 0,
+              completedAt: new Date()
+            }
+          }
+        );
+
+        try {
+          const learningController = require('./learningController');
+          await learningController.updateProfile(req.user._id);
+        } catch (learnErr) {
+          console.error('[Voice Controller] Failed to update learning profile:', learnErr.message);
+        }
+
+        return res.status(200).json({
+          success: true,
+          report: updatedSession
+        });
+      }
 
       // Compute strict mathematical scores across ALL questions in session (denominator = total session questions count)
       const sumTech = questions.reduce((acc, q) => acc + (q.technicalScore !== undefined && q.technicalScore !== null ? q.technicalScore : (q.score ? q.score * 10 : 0)), 0);
@@ -391,7 +480,6 @@ exports.compileVoiceReport = async (req, res, next) => {
       const calculatedFluScore  = Math.round(sumFlu / totalQuestionsCount);
       const calculatedOverallScore = Math.round((calculatedTechScore * 0.5) + (calculatedCommScore * 0.5));
 
-      const answered = questions.filter(q => q.wordCount > 0);
       const totalWordCount = answered.reduce((acc, q) => acc + q.wordCount, 0);
       const totalDurationSec = answered.reduce((acc, q) => acc + q.audioDurationSec, 0);
       const avgWpm = totalDurationSec > 0 ? Math.round((totalWordCount / totalDurationSec) * 60) : (totalWordCount > 0 ? 120 : 0);
@@ -673,7 +761,8 @@ exports.terminateVoiceSession = async (req, res, next) => {
       {
         $set: {
           status: 'Terminated',
-          completedAt: new Date()
+          completedAt: new Date(),
+          resumedTerminatedCount: voiceSession ? (voiceSession.resumedTerminatedCount || 0) : 0
         }
       }
     );

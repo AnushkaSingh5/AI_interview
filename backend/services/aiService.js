@@ -234,6 +234,19 @@ Evaluate the candidate answer and provide a JSON response with:
  * 9. Voice Response Evaluation (Technical + Vocal Communication)
  */
 const evaluateVoiceAnswer = async ({ questionText, topic, transcriptText, wordCount = 0, wpm = 0, fillerCount = 0 }) => {
+  if (!transcriptText || transcriptText.trim().length === 0 || wordCount === 0) {
+    return {
+      score: 0,
+      technicalScore: 0,
+      communicationScore: 0,
+      fluencyScore: 0,
+      confidenceScore: 0,
+      feedback: 'No verbal answer was recorded for this question.',
+      idealAnswer: 'Provide a comprehensive answer addressing the question criteria.',
+      communicationTips: ['Speak clearly into the microphone.']
+    };
+  }
+
   const prompt = `You are a corporate executive interviewer evaluating a verbal voice response.
 Question: "${questionText}"
 Topic: "${topic}"

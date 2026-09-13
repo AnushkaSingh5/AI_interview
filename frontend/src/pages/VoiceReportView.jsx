@@ -103,34 +103,32 @@ const VoiceReportView = () => {
     Score: (q.score || 0) * 10
   }));
 
-  const strengths = report.strengths && report.strengths.length > 0 ? report.strengths : [
+  const strengths = report.strengths && report.strengths.length > 0 ? report.strengths : (answeredCount > 0 ? [
     'Clear vocal delivery and articulate speaking tone.',
     'Direct answers provided for key technical questions.'
-  ];
+  ] : []);
 
   const focusGaps = report.focusGaps && report.focusGaps.length > 0 ? report.focusGaps : [
-    'Elaborate technical architecture and system trade-offs further.',
-    'Reduce filler words (um, uh, like) during technical explanations.'
+    'Candidate did not provide verbal answers to interview questions.'
   ];
 
   const recommendations = report.recommendations && report.recommendations.length > 0 ? report.recommendations : [
-    'Use the STAR method (Situation, Task, Action, Result) for structured verbal responses.',
-    'Pause silently for 1-2 seconds instead of using filler words.',
-    'Maintain a steady speaking pace between 130 and 150 words per minute.'
+    'Attempt all questions verbally to receive detailed feedback.',
+    'Ensure your microphone is enabled before starting.'
   ];
 
-  const learningRoadmap = report.learningRoadmap && report.learningRoadmap.length > 0 ? report.learningRoadmap : [
+  const learningRoadmap = report.learningRoadmap && report.learningRoadmap.length > 0 ? report.learningRoadmap : (answeredCount > 0 ? [
     { priority: 'PRIORITY 1', title: 'System Architecture & Design Patterns', description: 'Essential for articulating component trade-offs, caching, and DB scaling in interviews.' },
     { priority: 'PRIORITY 2', title: 'Verbal Articulation & STAR Method', description: 'Structure responses clearly to demonstrate technical leadership.' },
     { priority: 'PRIORITY 3', title: 'Code Performance & Debugging Trade-offs', description: 'Deepen technical justifications for memory limits and runtime bottlenecks.' }
-  ];
+  ] : []);
 
-  const skillHeatmap = report.skillHeatmap && report.skillHeatmap.length > 0 ? report.skillHeatmap : [
+  const skillHeatmap = report.skillHeatmap && report.skillHeatmap.length > 0 ? report.skillHeatmap : (answeredCount > 0 ? [
     { skill: 'Technical Core Analysis', stars: Math.max(1, Math.min(5, Math.round((report.technicalScore || 70) / 20))) },
     { skill: 'Verbal Delivery & Articulation', stars: Math.max(1, Math.min(5, Math.round((report.communicationScore || 80) / 20))) },
     { skill: 'Vocal Confidence & Flow', stars: Math.max(1, Math.min(5, Math.round((report.confidenceScore || 80) / 20))) },
     { skill: 'Problem Solving & Structure', stars: Math.max(1, Math.min(5, Math.round((report.overallScore || 75) / 20))) }
-  ];
+  ] : []);
 
   return (
     <div className="container py-4 text-start">
@@ -288,12 +286,16 @@ const VoiceReportView = () => {
               <div className="col-md-6">
                 <h4 className="h6 fw-bold text-success mb-2">Top Strengths</h4>
                 <ul className="list-unstyled mb-0">
-                  {strengths.map((st, i) => (
-                    <li key={i} className="small text-muted mb-2 d-flex align-items-start gap-2">
-                      <span className="text-success mt-0.5">&bull;</span>
-                      <span>{st}</span>
-                    </li>
-                  ))}
+                  {strengths.length > 0 ? (
+                    strengths.map((st, i) => (
+                      <li key={i} className="small text-muted mb-2 d-flex align-items-start gap-2">
+                        <span className="text-success mt-0.5">&bull;</span>
+                        <span>{st}</span>
+                      </li>
+                    ))
+                  ) : (
+                    <li className="small text-muted fst-italic">No verbal responses recorded to assess strengths.</li>
+                  )}
                 </ul>
               </div>
 
@@ -332,15 +334,21 @@ const VoiceReportView = () => {
             </h3>
 
             <div className="mb-4">
-              {learningRoadmap.map((item, i) => (
-                <div key={i} className="mb-3 p-2.5 rounded-3 bg-light border">
-                  <span className="badge bg-primary text-white fw-bold me-2" style={{ fontSize: '0.68rem' }}>
-                    {item.priority || `PRIORITY ${i + 1}`}
-                  </span>
-                  <strong className="small text-dark d-block mt-1 mb-1">{item.title}</strong>
-                  <p className="text-muted mb-0" style={{ fontSize: '0.74rem', lineHeight: '1.4' }}>{item.description}</p>
+              {learningRoadmap.length > 0 ? (
+                learningRoadmap.map((item, i) => (
+                  <div key={i} className="mb-3 p-2.5 rounded-3 bg-light border">
+                    <span className="badge bg-primary text-white fw-bold me-2" style={{ fontSize: '0.68rem' }}>
+                      {item.priority || `PRIORITY ${i + 1}`}
+                    </span>
+                    <strong className="small text-dark d-block mt-1 mb-1">{item.title}</strong>
+                    <p className="text-muted mb-0" style={{ fontSize: '0.74rem', lineHeight: '1.4' }}>{item.description}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="py-3 text-center text-muted small fst-italic">
+                  Spoken responses are required to generate personalized study priorities.
                 </div>
-              ))}
+              )}
             </div>
 
             <h3 className="h6 fw-bold text-dark mb-3 d-flex align-items-center gap-1.5">
@@ -348,16 +356,22 @@ const VoiceReportView = () => {
             </h3>
 
             <div className="d-flex flex-column gap-2">
-              {skillHeatmap.map((sk, i) => (
-                <div key={i} className="d-flex justify-content-between align-items-center py-1.5 border-bottom">
-                  <span className="small text-dark fw-semibold">{sk.skill}</span>
-                  <div className="d-flex gap-1 text-warning">
-                    {[1, 2, 3, 4, 5].map(star => (
-                      <span key={star} style={{ opacity: star <= sk.stars ? 1 : 0.25, fontSize: '0.9rem' }}>★</span>
-                    ))}
+              {skillHeatmap.length > 0 ? (
+                skillHeatmap.map((sk, i) => (
+                  <div key={i} className="d-flex justify-content-between align-items-center py-1.5 border-bottom">
+                    <span className="small text-dark fw-semibold">{sk.skill}</span>
+                    <div className="d-flex gap-1 text-warning">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <span key={star} style={{ opacity: star <= sk.stars ? 1 : 0.25, fontSize: '0.9rem' }}>★</span>
+                      ))}
+                    </div>
                   </div>
+                ))
+              ) : (
+                <div className="py-3 text-center text-muted small fst-italic">
+                  No skill star ratings available (0 verbal answers recorded).
                 </div>
-              ))}
+              )}
             </div>
           </div>
         </div>

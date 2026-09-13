@@ -421,12 +421,25 @@ exports.startInterview = async (req, res, next) => {
       });
     }
 
-    // Set active values if starting for the first time
-    if (session.status !== 'InProgress') {
+    // Check if session was terminated in between
+    if (session.status === 'Terminated') {
+      if ((session.resumedTerminatedCount || 0) >= 1) {
+        return res.status(400).json({
+          success: false,
+          status: 'terminated_limit_reached',
+          canResume: false,
+          message: 'This interview was terminated and has already used its one-time resume limit. Please retake the interview.'
+        });
+      }
+      // Allow 1-time resume
+      session.resumedTerminatedCount = 1;
       session.status = 'InProgress';
-      session.startedAt = new Date();
+      await session.save();
+    } else if (session.status !== 'InProgress') {
+      session.status = 'InProgress';
+      session.startedAt = session.startedAt || new Date();
       session.totalQuestions = session.questionCount;
-      session.timeRemaining = session.duration * 60; // Convert to seconds
+      session.timeRemaining = session.timeRemaining || (session.duration * 60); // Convert to seconds
       await session.save();
     }
 
@@ -455,10 +468,10 @@ exports.saveAnswer = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    if (['Completed', 'ReportReady'].includes(session.status)) {
+    if (['Completed', 'ReportReady', 'Terminated'].includes(session.status)) {
       return res.status(400).json({
         success: false,
-        message: 'Answers cannot be modified for a completed interview.'
+        message: 'Answers cannot be modified for a completed or terminated interview.'
       });
     }
 
@@ -627,10 +640,10 @@ exports.submitInterview = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
 
-    if (['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(session.status)) {
+    if (['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed', 'Terminated'].includes(session.status)) {
       return res.status(400).json({
         success: false,
-        message: 'This session has already been submitted.'
+        message: 'This session has already been submitted or terminated.'
       });
     }
 

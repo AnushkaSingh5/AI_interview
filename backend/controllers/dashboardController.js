@@ -229,7 +229,11 @@ exports.getInterviewHistory = async (req, res, next) => {
       // Else -> 'Terminated' ("Terminated in between" for all unfinished sessions across all modes)
       const finalStatus = isCompleted ? 'Completed' : (isEvaluating ? 'Evaluating' : 'Terminated');
 
-      const resumeCount = s.resumedTerminatedCount || (matchedVoice ? matchedVoice.resumedTerminatedCount : 0) || (matchedVideo ? matchedVideo.resumedTerminatedCount : 0) || 0;
+      const resumeCount = Math.max(
+        s.resumedTerminatedCount || 0,
+        matchedVoice ? (matchedVoice.resumedTerminatedCount || 0) : 0,
+        matchedVideo ? (matchedVideo.resumedTerminatedCount || 0) : 0
+      );
       const canResume = !isCompleted && !isEvaluating && resumeCount < 1;
 
       console.log(`[History] Mode: ${s.interviewMode || 'Text'}, Status: ${finalStatus}, ResumedCount: ${resumeCount}, CanResume: ${canResume}, Code: ${s.interviewId}`);

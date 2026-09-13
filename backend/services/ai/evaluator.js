@@ -28,6 +28,25 @@ const executeWithRetry = async (fn, retries = 4, baseDelays = [2000, 5000, 10000
 
 // 1. Evaluate single answer
 exports.evaluateAnswer = async (questionData, answerText, session, options = {}) => {
+  const isSkipped = !answerText || answerText.trim().length === 0 || (options.behavior && options.behavior.skipped);
+  
+  if (isSkipped) {
+    return {
+      score: 0,
+      accuracy: 0,
+      completeness: 0,
+      communication: 0,
+      technicalDepth: 0,
+      confidence: 0,
+      feedback: "No response was recorded for this question. It was skipped or left blank by the candidate.",
+      missingPoints: ["No response provided"],
+      improvementSuggestions: ["Do not skip questions during the live interview.", "Provide at least a partial response or state your general approach."],
+      idealAnswer: questionData.expectedAnswer || "Provide a comprehensive answer addressing the question criteria.",
+      isQuotaExhausted: false,
+      evaluationEngine: 'Direct'
+    };
+  }
+
   const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
@@ -262,13 +281,32 @@ JSON Schema Output:
 
 // 2. Compile overall interview report summary
 exports.compileOverallReport = async (evaluatedQuestions, session, options = {}) => {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
   // 1. Locally calculate aggregate scores
   const scores = evaluatedQuestions.map(q => q.evaluation.score);
   const totalQuestionsCount = scores.length || 1;
+  const nonZeroScoresCount = scores.filter(s => s > 0).length;
   const computedOverall = Math.round((scores.reduce((a, b) => a + b, 0) / (totalQuestionsCount * 10)) * 100);
+
+  // If no answers were provided or all question scores are 0, return clean zero report
+  if (nonZeroScoresCount === 0 || computedOverall === 0) {
+    return {
+      overallScore: 0,
+      technicalScore: 0,
+      hrScore: 0,
+      communicationScore: 0,
+      confidenceScore: 0,
+      strengths: [],
+      weaknesses: ["No answers were provided during this interview session."],
+      recommendations: ["Attempt all questions in the interview.", "Provide verbal or written explanations to demonstrate technical knowledge."],
+      learningRoadmap: [],
+      skillHeatmap: [],
+      overallFeedback: "No answers were provided during this interview session. 0 points awarded across all criteria.",
+      evaluationEngine: 'Direct'
+    };
+  }
+
+  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const techQuestions = evaluatedQuestions.filter(q => q.question.questionType === 'technical');
   const computedTech = techQuestions.length > 0

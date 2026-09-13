@@ -379,17 +379,25 @@ const InterviewReport = () => {
               <div className="col-md-6">
                 <h4 className="h6 fw-bold text-success mb-2">Top Strengths</h4>
                 <ul className="small text-muted ps-3 mb-0 d-flex flex-column gap-1.5">
-                  {ev.strengths.map((str, idx) => (
-                    <li key={idx}>{str}</li>
-                  ))}
+                  {ev.strengths?.length > 0 ? (
+                    ev.strengths.map((str, idx) => (
+                      <li key={idx}>{str}</li>
+                    ))
+                  ) : (
+                    <li className="list-unstyled text-muted fst-italic">No responses provided to assess strengths.</li>
+                  )}
                 </ul>
               </div>
               <div className="col-md-6">
                 <h4 className="h6 fw-bold text-danger mb-2">Focus Gaps</h4>
                 <ul className="small text-muted ps-3 mb-0 d-flex flex-column gap-1.5">
-                  {ev.weaknesses.map((weak, idx) => (
-                    <li key={idx}>{weak}</li>
-                  ))}
+                  {ev.weaknesses?.length > 0 ? (
+                    ev.weaknesses.map((weak, idx) => (
+                      <li key={idx}>{weak}</li>
+                    ))
+                  ) : (
+                    <li className="list-unstyled text-muted fst-italic">Ensure responses are submitted for each question.</li>
+                  )}
                 </ul>
               </div>
             </div>
@@ -397,9 +405,13 @@ const InterviewReport = () => {
             <div className="border-top mt-4 pt-3">
               <h4 className="h6 fw-bold text-dark mb-2">Actionable Grading Recommendations</h4>
               <ul className="small text-muted ps-3 mb-0 d-flex flex-column gap-1.5">
-                {ev.recommendations.map((rec, idx) => (
-                  <li key={idx}>{rec}</li>
-                ))}
+                {ev.recommendations?.length > 0 ? (
+                  ev.recommendations.map((rec, idx) => (
+                    <li key={idx}>{rec}</li>
+                  ))
+                ) : (
+                  <li className="list-unstyled text-muted fst-italic">Attempt interview questions to generate study recommendations.</li>
+                )}
               </ul>
             </div>
 
@@ -413,20 +425,26 @@ const InterviewReport = () => {
             {/* Learning Roadmap priorities */}
             <div className="mb-4">
               <h3 className="h6 fw-bold text-dark mb-3 d-flex align-items-center gap-1.5">
-                <FiMap className="text-primary" /> learning Roadmap Priorities
+                <FiMap className="text-primary" /> Learning Roadmap Priorities
               </h3>
               <div className="d-flex flex-column gap-2">
-                {ev.learningRoadmap?.map((road, idx) => (
-                  <div key={idx} className="border rounded p-2 bg-light bg-opacity-25 d-flex gap-2 align-items-start">
-                    <span className="badge bg-primary text-uppercase px-2 py-1" style={{ fontSize: '0.64rem', minWidth: '70px', color: 'white' }}>
-                      {road.priority}
-                    </span>
-                    <div>
-                      <strong className="text-dark small d-block">{road.topic}</strong>
-                      <span className="text-muted small" style={{ fontSize: '0.74rem' }}>{road.reason}</span>
+                {ev.learningRoadmap?.length > 0 ? (
+                  ev.learningRoadmap.map((road, idx) => (
+                    <div key={idx} className="border rounded p-2 bg-light bg-opacity-25 d-flex gap-2 align-items-start">
+                      <span className="badge bg-primary text-uppercase px-2 py-1" style={{ fontSize: '0.64rem', minWidth: '70px', color: 'white' }}>
+                        {road.priority}
+                      </span>
+                      <div>
+                        <strong className="text-dark small d-block">{road.topic}</strong>
+                        <span className="text-muted small" style={{ fontSize: '0.74rem' }}>{road.reason}</span>
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="py-3 text-center text-muted small fst-italic">
+                    Attempt questions to generate a personalized learning roadmap.
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
@@ -436,22 +454,28 @@ const InterviewReport = () => {
                 <FiStar className="text-primary" /> Skill Heatmap Stars
               </h3>
               <div className="d-flex flex-column gap-2">
-                {ev.skillHeatmap?.map((skillItem, idx) => (
-                  <div key={idx} className="d-flex justify-content-between align-items-center border-bottom pb-2">
-                    <span className="small text-dark fw-semibold">{skillItem.skill}</span>
-                    <div className="d-flex gap-0.5 text-warning">
-                      {Array.from({ length: 5 }).map((_, starIdx) => (
-                        <FiStar 
-                          key={starIdx} 
-                          style={{ 
-                            fill: starIdx < skillItem.stars ? 'var(--primary-purple)' : 'transparent',
-                            stroke: starIdx < skillItem.stars ? 'var(--primary-purple)' : '#cbd5e1'
-                          }} 
-                        />
-                      ))}
+                {ev.skillHeatmap?.length > 0 ? (
+                  ev.skillHeatmap.map((skillItem, idx) => (
+                    <div key={idx} className="d-flex justify-content-between align-items-center border-bottom pb-2">
+                      <span className="small text-dark fw-semibold">{skillItem.skill}</span>
+                      <div className="d-flex gap-0.5 text-warning">
+                        {Array.from({ length: 5 }).map((_, starIdx) => (
+                          <FiStar 
+                            key={starIdx} 
+                            style={{ 
+                              fill: starIdx < skillItem.stars ? 'var(--primary-purple)' : 'transparent',
+                              stroke: starIdx < skillItem.stars ? 'var(--primary-purple)' : '#cbd5e1'
+                            }} 
+                          />
+                        ))}
+                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="py-3 text-center text-muted small fst-italic">
+                    Attempt questions to generate skill ratings.
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
