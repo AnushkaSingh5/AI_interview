@@ -570,8 +570,19 @@ exports.resumeInterview = async (req, res, next) => {
       });
     }
 
-    // Ensure session is set to InProgress
-    if (session.status !== 'InProgress') {
+    // Check if session was terminated in between
+    if (session.status === 'Terminated') {
+      if ((session.resumedTerminatedCount || 0) >= 1) {
+        return res.status(400).json({
+          success: false,
+          message: 'This interview was terminated and has already used its one-time resume limit. Please retake the interview.'
+        });
+      }
+      // Allow 1-time resume
+      session.resumedTerminatedCount = 1;
+      session.status = 'InProgress';
+      await session.save();
+    } else if (session.status !== 'InProgress') {
       session.status = 'InProgress';
       session.startedAt = session.startedAt || new Date();
       session.totalQuestions = session.questionCount;
@@ -1042,6 +1053,35 @@ exports.retakeInterview = async (req, res, next) => {
       success: true,
       message: 'New retake interview session initialized successfully',
       session: newSession
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Terminate interview session in between
+// @route   POST /api/interviews/:id/terminate
+// @access  Private
+exports.terminateInterview = async (req, res, next) => {
+  try {
+    const session = await findSessionByIdOrCode(req.params.id);
+    if (!session) {
+      return res.status(404).json({ success: false, message: 'Interview session not found' });
+    }
+
+    if (session.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    session.status = 'Terminated';
+    session.completedAt = new Date();
+    await session.save();
+
+    console.log(`[Interview Controller] InterviewSession ${session.interviewId} marked as Terminated`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Interview session terminated successfully'
     });
   } catch (error) {
     next(error);

@@ -299,7 +299,7 @@ const InterviewQuestionsReview = () => {
         </div>
 
         {/* Actions */}
-        <div className="d-flex justify-content-between gap-3">
+        <div className="d-flex justify-content-between gap-3 mb-2">
           <button 
             type="button" 
             onClick={() => navigate('/dashboard')}
@@ -313,9 +313,13 @@ const InterviewQuestionsReview = () => {
             disabled={starting || generating}
             className="btn btn-primary-purple py-2.5 px-5 shadow-sm"
           >
-            {starting ? 'Initializing...' : 'Begin Interview'}
+            {starting ? 'Initializing...' : 'Begin Interview (Fullscreen Lockdown)'}
           </button>
         </div>
+
+        <p className="text-muted text-center small mb-0" style={{ fontSize: '0.75rem' }}>
+          🔒 Note: The interview workspace operates in strict fullscreen mode with active proctoring locks.
+        </p>
 
       </div>
     </div>

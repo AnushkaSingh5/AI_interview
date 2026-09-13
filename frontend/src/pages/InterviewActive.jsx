@@ -26,12 +26,165 @@ const InterviewActive = () => {
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Strict Lockdown & Proctoring states
+  const [interviewState, setInterviewState] = useState(document.fullscreenElement ? 'INTERVIEW_ACTIVE' : 'INTERVIEW_PAUSED');
+  const [lockdownReason, setLockdownReason] = useState(document.fullscreenElement ? '' : 'Fullscreen mode is required to participate in this mock interview.');
+  const [tabSwitchStrikes, setTabSwitchStrikes] = useState(0);
+  const [isTerminating, setIsTerminating] = useState(false);
+  const isTerminatingRef = useRef(false);
+  const interviewStateRef = useRef('INTERVIEW_ACTIVE');
+  const tabSwitchStrikesRef = useRef(0);
+  const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    interviewStateRef.current = interviewState;
+  }, [interviewState]);
+
+  useEffect(() => {
+    tabSwitchStrikesRef.current = tabSwitchStrikes;
+  }, [tabSwitchStrikes]);
+
   // Timer state (seconds remaining)
   const [timeRemaining, setTimeRemaining] = useState(0);
   const timerIntervalRef = useRef(null);
 
   // Auto-save interval ref
   const autoSaveIntervalRef = useRef(null);
+
+  // Strict Interview Lockdown & Fullscreen Enforcer
+  useEffect(() => {
+    document.body.classList.add('interview-lockdown-active');
+
+    const requestFullscreenSafe = async () => {
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (err) {
+        console.warn('Fullscreen request deferred until user interaction:', err);
+      }
+    };
+
+    requestFullscreenSafe();
+
+    const handleFullscreenChange = () => {
+      if (isSubmittingRef.current) return;
+      if (!document.fullscreenElement && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason('Fullscreen mode was exited. Fullscreen is strictly required during mock interviews.');
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (isSubmittingRef.current) return;
+      if (document.hidden) {
+        tabSwitchStrikesRef.current += 1;
+        const currentStrikes = tabSwitchStrikesRef.current;
+        setTabSwitchStrikes(currentStrikes);
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason(`⚠️ Tab Switch / Window Blur detected (Strike ${currentStrikes}/3). Switching tabs or minimizing the window is prohibited.`);
+        toast.warn(`Proctoring Strike ${currentStrikes}/3: Tab switched or minimized!`);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (isSubmittingRef.current) return;
+      if (interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+        tabSwitchStrikesRef.current += 1;
+        const currentStrikes = tabSwitchStrikesRef.current;
+        setTabSwitchStrikes(currentStrikes);
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason(`⚠️ Window focus lost (Strike ${currentStrikes}/3). You must remain focused on the interview window.`);
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (isSubmittingRef.current) return;
+      // Intercept ESC
+      if (e.key === 'Escape' || e.code === 'Escape' || e.keyCode === 27) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+          setInterviewState('INTERVIEW_PAUSED');
+          setLockdownReason('Fullscreen exit intercepted. Please stay in fullscreen to complete your interview.');
+        }
+        return false;
+      }
+
+      // Block F11, F12, Ctrl+Shift+I, Alt+Tab / Win
+      if (
+        e.key === 'F11' || 
+        e.key === 'F12' || 
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) ||
+        ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R' || e.key === 'w' || e.key === 'W'))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.body.classList.remove('interview-lockdown-active');
+      if (document.fullscreenElement) {
+        try {
+          document.exitFullscreen();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const handleReturnToInterview = async () => {
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
+      setInterviewState('INTERVIEW_ACTIVE');
+      setLockdownReason('');
+    } catch (err) {
+      console.warn('Fullscreen request failed:', err);
+      setInterviewState('INTERVIEW_ACTIVE');
+      setLockdownReason('');
+    }
+  };
+
+  const handleTerminateInterview = async () => {
+    if (isTerminatingRef.current) return;
+    if (!window.confirm('Are you sure you want to terminate this interview? The session will be marked as Terminated.')) {
+      return;
+    }
+    isTerminatingRef.current = true;
+    setIsTerminating(true);
+    isSubmittingRef.current = true;
+    try {
+      await axiosInstance.post(`/interviews/${session?._id || id}/terminate`);
+      toast.info('Interview has been terminated.');
+    } catch (e) {
+      console.warn('Termination API notice:', e.message);
+    } finally {
+      if (document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch (e) {}
+      }
+      document.body.classList.remove('interview-lockdown-active');
+      navigate('/mock-interviews');
+    }
+  };
 
   useEffect(() => {
     fetchSessionContext();
@@ -43,7 +196,7 @@ const InterviewActive = () => {
 
   // Handle ticking timer
   useEffect(() => {
-    if (activeStep === 'active' && timeRemaining > 0) {
+    if (activeStep === 'active' && timeRemaining > 0 && interviewState === 'INTERVIEW_ACTIVE') {
       timerIntervalRef.current = setInterval(() => {
         setTimeRemaining(prev => {
           if (prev <= 1) {
@@ -58,11 +211,11 @@ const InterviewActive = () => {
       clearInterval(timerIntervalRef.current);
     }
     return () => clearInterval(timerIntervalRef.current);
-  }, [activeStep, timeRemaining]);
+  }, [activeStep, timeRemaining, interviewState]);
 
   // Handle auto-save timer (every 10 seconds)
   useEffect(() => {
-    if (activeStep === 'active') {
+    if (activeStep === 'active' && interviewState === 'INTERVIEW_ACTIVE') {
       autoSaveIntervalRef.current = setInterval(() => {
         triggerAutoSave();
       }, 10000);
@@ -70,7 +223,7 @@ const InterviewActive = () => {
       clearInterval(autoSaveIntervalRef.current);
     }
     return () => clearInterval(autoSaveIntervalRef.current);
-  }, [activeStep, currentIndex, answersMap]);
+  }, [activeStep, currentIndex, answersMap, interviewState]);
 
   const fetchSessionContext = async () => {
     setLoading(true);
@@ -114,8 +267,8 @@ const InterviewActive = () => {
         setActiveStep('active');
       }
     } catch (err) {
-      toast.error('Failed to load mock interview workspace.');
-      navigate('/dashboard');
+      toast.error(err.response?.data?.message || 'Failed to load mock interview workspace.');
+      navigate('/mock-interviews');
     } finally {
       setLoading(false);
     }
@@ -239,16 +392,24 @@ const InterviewActive = () => {
 
   const executeSubmission = async () => {
     setSubmitting(true);
+    isSubmittingRef.current = true;
     try {
       // Sync last draft first
       await triggerAutoSave();
 
       const response = await axiosInstance.post(`/interviews/${session._id}/submit`);
       if (response.data && response.data.success) {
+        if (document.fullscreenElement) {
+          try {
+            await document.exitFullscreen();
+          } catch (e) {}
+        }
+        document.body.classList.remove('interview-lockdown-active');
         setSession(response.data.session);
         setActiveStep('success');
       }
     } catch (err) {
+      isSubmittingRef.current = false;
       toast.error('Failed to submit interview session.');
     } finally {
       setSubmitting(false);
@@ -328,6 +489,55 @@ const InterviewActive = () => {
   if (activeStep === 'review') {
     return (
       <div className="container py-4 text-start">
+        {/* Strict Lockdown Paused Overlay */}
+        {interviewState === 'INTERVIEW_PAUSED' && (
+          <div className="lockdown-paused-overlay">
+            <div className="lockdown-card text-white">
+              <FiAlertCircle className="text-warning display-3 mb-3 animate-pulse" />
+              <h4 className="fw-bold mb-2">Resume Mock Interview</h4>
+              <p className="text-muted small mb-4">
+                {lockdownReason || 'Fullscreen mode is required to continue your interview.'}
+              </p>
+              <div className="d-flex flex-column gap-2">
+                <button 
+                  onClick={handleReturnToInterview}
+                  className="btn btn-info w-100 fw-bold py-2 rounded-3 text-white"
+                >
+                  Resume Interview (Enter Fullscreen)
+                </button>
+                <button 
+                  onClick={handleTerminateInterview}
+                  disabled={isTerminating}
+                  className="btn btn-outline-danger w-100 fw-bold py-2 rounded-3"
+                >
+                  {isTerminating ? 'Terminating...' : 'Terminate Interview'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Top Header Bar with Indicators and Terminate Button */}
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
+            <span className="text-danger animate-pulse">● LIVE</span>
+            <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
+            <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+            {tabSwitchStrikes > 0 && (
+              <span className="text-warning border-start border-secondary ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
+            )}
+          </div>
+          <button
+            onClick={handleTerminateInterview}
+            disabled={isTerminating}
+            className="btn btn-sm btn-danger px-3 py-1.5 rounded-3 fw-bold d-flex align-items-center gap-1.5 shadow"
+            style={{ fontSize: '0.8rem' }}
+            title="Terminate and exit mock interview"
+          >
+            <FiAlertCircle /> {isTerminating ? 'Terminating...' : 'Terminate Interview'}
+          </button>
+        </div>
+
         <div className="glass-panel p-4 bg-white mb-4" style={{ border: '1px solid var(--border-grey)' }}>
           <h2 className="fw-bold text-dark mb-1" style={{ fontSize: '1.45rem' }}>Review Answers</h2>
           <p className="text-muted small">Please review your draft responses before final submission. You can click on any question to modify it.</p>
@@ -426,6 +636,55 @@ const InterviewActive = () => {
 
   return (
     <div className="container py-4 text-start">
+      {/* Strict Lockdown Paused Overlay */}
+      {interviewState === 'INTERVIEW_PAUSED' && (
+        <div className="lockdown-paused-overlay">
+          <div className="lockdown-card text-white">
+            <FiAlertCircle className="text-warning display-3 mb-3 animate-pulse" />
+            <h4 className="fw-bold mb-2">Resume Mock Interview</h4>
+            <p className="text-muted small mb-4">
+              {lockdownReason || 'Fullscreen mode is required to continue your interview.'}
+            </p>
+            <div className="d-flex flex-column gap-2">
+              <button 
+                onClick={handleReturnToInterview}
+                className="btn btn-info w-100 fw-bold py-2 rounded-3 text-white"
+              >
+                Resume Interview (Enter Fullscreen)
+              </button>
+              <button 
+                onClick={handleTerminateInterview}
+                disabled={isTerminating}
+                className="btn btn-outline-danger w-100 fw-bold py-2 rounded-3"
+              >
+                {isTerminating ? 'Terminating...' : 'Terminate Interview'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Header Bar with Indicators and Terminate Button */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
+          <span className="text-danger animate-pulse">● LIVE</span>
+          <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
+          <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+          {tabSwitchStrikes > 0 && (
+            <span className="text-warning border-start border-secondary ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
+          )}
+        </div>
+        <button
+          onClick={handleTerminateInterview}
+          disabled={isTerminating}
+          className="btn btn-sm btn-danger px-3 py-1.5 rounded-3 fw-bold d-flex align-items-center gap-1.5 shadow"
+          style={{ fontSize: '0.8rem' }}
+          title="Terminate and exit mock interview"
+        >
+          <FiAlertCircle /> {isTerminating ? 'Terminating...' : 'Terminate Interview'}
+        </button>
+      </div>
+
       {/* Top dashboard info header */}
       <div className="glass-panel p-3 bg-white mb-4 d-flex justify-content-between align-items-center" style={{ border: '1px solid var(--border-grey)', fontSize: '0.84rem' }}>
         <div className="d-flex align-items-center gap-3 flex-grow-1 me-4">

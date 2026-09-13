@@ -17,6 +17,24 @@ const VoiceSessionView = () => {
   const [questions, setQuestions] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
 
+  // Strict Lockdown & Proctoring states
+  const [interviewState, setInterviewState] = useState(document.fullscreenElement ? 'INTERVIEW_ACTIVE' : 'INTERVIEW_PAUSED');
+  const [lockdownReason, setLockdownReason] = useState(document.fullscreenElement ? '' : 'Fullscreen mode is required to participate in this voice interview.');
+  const [tabSwitchStrikes, setTabSwitchStrikes] = useState(0);
+  const [isTerminating, setIsTerminating] = useState(false);
+  const isTerminatingRef = useRef(false);
+  const interviewStateRef = useRef('INTERVIEW_ACTIVE');
+  const tabSwitchStrikesRef = useRef(0);
+  const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    interviewStateRef.current = interviewState;
+  }, [interviewState]);
+
+  useEffect(() => {
+    tabSwitchStrikesRef.current = tabSwitchStrikes;
+  }, [tabSwitchStrikes]);
+
   // Recording & Speech Recognition states
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -50,6 +68,162 @@ const VoiceSessionView = () => {
   const pollIntervalRef = useRef(null);
   const isFetchingRef = useRef(false);
   const fetchedIdRef = useRef(null);
+
+  // Strict Interview Lockdown & Fullscreen Enforcer
+  useEffect(() => {
+    document.body.classList.add('interview-lockdown-active');
+
+    const requestFullscreenSafe = async () => {
+      try {
+        if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+          await document.documentElement.requestFullscreen();
+        }
+      } catch (err) {
+        console.warn('Fullscreen request deferred until user gesture:', err);
+      }
+    };
+
+    requestFullscreenSafe();
+
+    const handleFullscreenChange = () => {
+      if (isSubmittingRef.current) return;
+      if (!document.fullscreenElement && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason('Fullscreen mode was exited. Fullscreen is strictly required during mock interviews.');
+        if (isRecordingRef.current) {
+          pauseRecording();
+        }
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (isSubmittingRef.current) return;
+      if (document.hidden) {
+        tabSwitchStrikesRef.current += 1;
+        const currentStrikes = tabSwitchStrikesRef.current;
+        setTabSwitchStrikes(currentStrikes);
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason(`⚠️ Tab Switch / Window Blur detected (Strike ${currentStrikes}/3). Switching tabs or minimizing the window is prohibited.`);
+        if (isRecordingRef.current) {
+          pauseRecording();
+        }
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+        toast.warn(`Proctoring Strike ${currentStrikes}/3: Tab switched or minimized!`);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (isSubmittingRef.current) return;
+      if (interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+        tabSwitchStrikesRef.current += 1;
+        const currentStrikes = tabSwitchStrikesRef.current;
+        setTabSwitchStrikes(currentStrikes);
+        setInterviewState('INTERVIEW_PAUSED');
+        setLockdownReason(`⚠️ Window focus lost (Strike ${currentStrikes}/3). You must remain focused on the interview window.`);
+        if (isRecordingRef.current) {
+          pauseRecording();
+        }
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+        }
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (isSubmittingRef.current) return;
+      // Intercept ESC
+      if (e.key === 'Escape' || e.code === 'Escape' || e.keyCode === 27) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+          setInterviewState('INTERVIEW_PAUSED');
+          setLockdownReason('Fullscreen exit intercepted. Please stay in fullscreen to complete your interview.');
+          if (isRecordingRef.current) pauseRecording();
+          if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        }
+        return false;
+      }
+
+      // Block F11, F12, Ctrl+Shift+I, Alt+Tab / Win
+      if (
+        e.key === 'F11' || 
+        e.key === 'F12' || 
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) ||
+        ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R' || e.key === 'w' || e.key === 'W'))
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    const handleContextMenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('contextmenu', handleContextMenu);
+      document.body.classList.remove('interview-lockdown-active');
+      if (document.fullscreenElement) {
+        try {
+          document.exitFullscreen();
+        } catch (e) {}
+      }
+    };
+  }, []);
+
+  const handleReturnToInterview = async () => {
+    try {
+      if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        await document.documentElement.requestFullscreen();
+      }
+      setInterviewState('INTERVIEW_ACTIVE');
+      setLockdownReason('');
+    } catch (err) {
+      console.warn('Fullscreen request failed:', err);
+      setInterviewState('INTERVIEW_ACTIVE');
+      setLockdownReason('');
+    }
+  };
+
+  const handleTerminateInterview = async () => {
+    if (isTerminatingRef.current) return;
+    if (!window.confirm('Are you sure you want to terminate this voice interview? The session will be marked as Terminated.')) {
+      return;
+    }
+    isTerminatingRef.current = true;
+    setIsTerminating(true);
+    isSubmittingRef.current = true;
+    try {
+      const sessionKey = session?.sessionId || session?._id || id;
+      await axiosInstance.post('/voice/terminate', { sessionId: sessionKey });
+      toast.info('Voice interview has been terminated.');
+    } catch (e) {
+      console.warn('Termination API notice:', e.message);
+    } finally {
+      if (document.fullscreenElement) {
+        try { await document.exitFullscreen(); } catch (e) {}
+      }
+      document.body.classList.remove('interview-lockdown-active');
+      navigate('/mock-interviews');
+    }
+  };
 
   useEffect(() => {
     if (fetchedIdRef.current === id) return;
@@ -91,7 +265,10 @@ const VoiceSessionView = () => {
       }
     } catch (err) {
       console.error('Error fetching voice session:', err);
-      toast.error('Failed to load voice interview session');
+      toast.error(err.response?.data?.message || 'Failed to load voice interview session');
+      if (err.response?.status === 400 || err.response?.status === 404) {
+        navigate('/mock-interviews');
+      }
     } finally {
       setLoading(false);
       isFetchingRef.current = false;
@@ -391,8 +568,15 @@ const VoiceSessionView = () => {
           console.log('[Voice Pipeline] Interview Finished');
           console.log('[Voice Pipeline] Evaluation Started');
           toast.info('Compiling overall Voice Communication Report...');
+          isSubmittingRef.current = true;
           const repRes = await axiosInstance.post('/voice/compile-report', { sessionId: sessionKey });
           if (repRes.data && repRes.data.success) {
+            if (document.fullscreenElement) {
+              try {
+                await document.exitFullscreen();
+              } catch (e) {}
+            }
+            document.body.classList.remove('interview-lockdown-active');
             navigate(`/voice-interview/report/${sessionKey}`);
           }
         }
@@ -443,13 +627,59 @@ const VoiceSessionView = () => {
 
   return (
     <div className="container py-4 text-start">
-      {/* Header */}
+      {/* Strict Lockdown Paused Overlay */}
+      {interviewState === 'INTERVIEW_PAUSED' && (
+        <div className="lockdown-paused-overlay">
+          <div className="lockdown-card text-white">
+            <FiAlertCircle className="text-warning display-3 mb-3 animate-pulse" />
+            <h4 className="fw-bold mb-2">Resume Voice Mock Interview</h4>
+            <p className="text-muted small mb-4">
+              {lockdownReason || 'Fullscreen mode is required to start or continue your voice interview.'}
+            </p>
+            <div className="d-flex flex-column gap-2">
+              <button 
+                onClick={handleReturnToInterview}
+                className="btn btn-info w-100 fw-bold py-2 rounded-3 text-white"
+              >
+                Resume Interview (Enter Fullscreen)
+              </button>
+              <button 
+                onClick={handleTerminateInterview}
+                disabled={isTerminating}
+                className="btn btn-outline-danger w-100 fw-bold py-2 rounded-3"
+              >
+                {isTerminating ? 'Terminating...' : 'Terminate Interview'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top Header Bar with Indicators and Terminate Button */}
+      <div className="d-flex justify-content-between align-items-center mb-3">
+        <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
+          <span className={`${isRecording ? 'text-danger animate-pulse' : 'text-muted'}`}>● {isRecording ? 'REC' : 'STANDBY'}</span>
+          <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
+          <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+          {tabSwitchStrikes > 0 && (
+            <span className="text-warning border-start border-secondary ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
+          )}
+        </div>
+        <button
+          onClick={handleTerminateInterview}
+          disabled={isTerminating}
+          className="btn btn-sm btn-danger px-3 py-1.5 rounded-3 fw-bold d-flex align-items-center gap-1.5 shadow"
+          style={{ fontSize: '0.8rem' }}
+          title="Terminate and exit voice mock interview"
+        >
+          <FiAlertCircle /> {isTerminating ? 'Terminating...' : 'Terminate Interview'}
+        </button>
+      </div>
+
+      {/* Session Title and Question Indicator Header */}
       <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
         <div>
-          <Link to="/mock-interviews" className="text-muted small text-decoration-none d-flex align-items-center gap-1 mb-1">
-            <FiArrowLeft /> Back to Interviews
-          </Link>
-          <h2 className="fw-bold text-dark mb-0">{session?.sessionTitle}</h2>
+          <h2 className="fw-bold text-dark mb-0">{session?.sessionTitle || 'Voice Mock Interview'}</h2>
         </div>
         <div className="d-flex align-items-center gap-2">
           <span className="badge bg-primary bg-opacity-10 text-primary fw-bold px-3 py-2">

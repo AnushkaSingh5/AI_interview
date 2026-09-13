@@ -23,7 +23,8 @@ const {
   getReport,
   getQuestionFeedback,
   downloadReportPdf,
-  retakeInterview
+  retakeInterview,
+  terminateInterview
 } = require('../controllers/interviewController');
 
 const router = express.Router();
@@ -146,5 +147,8 @@ router.get('/:id/report/pdf', downloadReportPdf);
 
 // @route   POST /api/interviews/:id/retake
 router.post('/:id/retake', protect, retakeInterview);
+
+// @route   POST /api/interviews/:id/terminate
+router.post('/:id/terminate', protect, terminateInterview);
 
 module.exports = router;

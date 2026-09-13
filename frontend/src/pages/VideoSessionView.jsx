@@ -8,7 +8,7 @@ import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
 import avatarImg from '../assets/avatar.png';
-import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
+import { FilesetResolver, FaceLandmarker, ObjectDetector } from '@mediapipe/tasks-vision';
 
 const VideoSessionView = () => {
   const { id } = useParams();
@@ -43,6 +43,8 @@ const VideoSessionView = () => {
   const [submitting, setSubmitting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isInsecureContext, setIsInsecureContext] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
+  const isTerminatingRef = useRef(false);
   const pollIntervalRef = useRef(null);
 
   const [timeLeftSec, setTimeLeftSec] = useState(90);
@@ -86,9 +88,6 @@ const VideoSessionView = () => {
   const smoothedRollRef = useRef(0);
   const smoothedEyeContactRef = useRef(90);
   const smoothedCameraFacingRef = useRef(90);
-  const smoothedSmileRef = useRef(0);
-  const smoothedFrownRef = useRef(0);
-  const smoothedSurpriseRef = useRef(0);
   const lastLoggedSecRef = useRef(0);
   const loggedBlendshapesRef = useRef(false);
   const wasEyeContactUnavailableRef = useRef(true);
@@ -101,8 +100,20 @@ const VideoSessionView = () => {
 
   // MediaPipe Face Landmarker States
   const [faceLandmarker, setFaceLandmarker] = useState(null);
+  const [objectDetector, setObjectDetector] = useState(null);
+  const objectDetectorRef = useRef(null);
   const [modelLoading, setModelLoading] = useState(false);
   const [modelError, setModelError] = useState(false);
+  
+  // Real-time Object Identification Proctoring Alert
+  const [prohibitedObjectAlert, setProhibitedObjectAlert] = useState({ active: false, label: '' });
+  const consecutiveObjectDetectionsRef = useRef(0);
+  const lastObjectDetectTimeRef = useRef(0);
+  const lastProhibitedEventTimeRef = useRef(0);
+  const prohibitedObjectEventsRef = useRef(0);
+  const lastKeyToastTimeRef = useRef(0);
+  const lastProhibitedToastTimeRef = useRef(0);
+  const ttsFallbackTimeoutRef = useRef(null);
   
   // Internal pipeline tracking states: 'LOADING' | 'READY' | 'ERROR'
   const [pipelineStatus, setPipelineStatus] = useState('LOADING');
@@ -142,6 +153,16 @@ const VideoSessionView = () => {
   const expressionSmileFramesRef = useRef(0);
   const expressionFrownFramesRef = useRef(0);
   const expressionSurpriseFramesRef = useRef(0);
+  const expressionThinkingFramesRef = useRef(0);
+  const expressionSpeakingFramesRef = useRef(0);
+  const expressionConfusedFramesRef = useRef(0);
+
+  const smoothedSmileRef = useRef(0);
+  const smoothedFrownRef = useRef(0);
+  const smoothedSurpriseRef = useRef(0);
+  const smoothedThinkingRef = useRef(0);
+  const smoothedSpeakingRef = useRef(0);
+  const smoothedConfusedRef = useRef(0);
 
   const noFaceEventsRef = useRef(0);
   const multipleFaceEventsRef = useRef(0);
@@ -179,7 +200,7 @@ const VideoSessionView = () => {
     let active = true;
 
     const initLandmarker = async () => {
-      console.log('[Face Analysis] Starting MediaPipe initialization...');
+      console.log('[Face & Object Analysis] Starting MediaPipe initialization...');
       setPipelineStatus('LOADING');
       setModelLoading(true);
 
@@ -199,16 +220,49 @@ const VideoSessionView = () => {
           outputFaceBlendshapes: true,
           outputFacialTransformationMatrixes: true,
           runningMode: "VIDEO",
-          numFaces: 1 // Simplified for debugging
+          numFaces: 1
         });
 
         console.log('[Face Analysis] FaceLandmarker model loaded');
 
+        // Load ObjectDetector for Real-Time Proctoring (IMAGE mode for isolated thread execution)
+        let detector = null;
+        try {
+          detector = await ObjectDetector.createFromOptions(filesetResolver, {
+            baseOptions: {
+              modelAssetPath: "/models/efficientdet_lite0.tflite",
+              delegate: "CPU"
+            },
+            scoreThreshold: 0.18,
+            runningMode: "IMAGE"
+          });
+          console.log('[Object Detection] MediaPipe ObjectDetector loaded from local model in IMAGE mode');
+        } catch (objErr) {
+          console.warn('[Object Detection] Local model load failed, attempting CDN fallback:', objErr);
+          try {
+            detector = await ObjectDetector.createFromOptions(filesetResolver, {
+              baseOptions: {
+                modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite",
+                delegate: "CPU"
+              },
+              scoreThreshold: 0.18,
+              runningMode: "IMAGE"
+            });
+            console.log('[Object Detection] MediaPipe ObjectDetector loaded from CDN fallback');
+          } catch (cdnErr) {
+            console.warn('[Object Detection] Both local and CDN Object Detector initializations failed:', cdnErr);
+          }
+        }
+
         if (active) {
           setFaceLandmarker(landmarker);
+          if (detector) {
+            objectDetectorRef.current = detector;
+            setObjectDetector(detector);
+          }
           setPipelineStatus('READY');
           setModelLoading(false);
-          console.log('[Face Analysis] FaceLandmarker ready');
+          console.log('[Face & Object Analysis] All models ready');
         }
       } catch (err) {
         console.error('[Face Analysis] Failed to initialize MediaPipe FaceLandmarker:', err);
@@ -230,6 +284,10 @@ const VideoSessionView = () => {
   useEffect(() => {
     faceLandmarkerRef.current = faceLandmarker;
   }, [faceLandmarker]);
+
+  useEffect(() => {
+    objectDetectorRef.current = objectDetector;
+  }, [objectDetector]);
 
   // Start webcam immediately on mount and keep alive
   useEffect(() => {
@@ -299,12 +357,22 @@ const VideoSessionView = () => {
       const handleKeyDown = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (e.key === 'Escape') {
-          toast.info('Use the red "Terminate Interview" button at the top to exit.');
-        } else if ((e.ctrlKey && e.key === 'r') || (e.metaKey && e.key === 'r') || e.key === 'F5') {
-          toast.warning('Page refresh is locked during the active interview.');
-        } else {
-          toast.info('Keyboard input is disabled during the video interview.');
+
+        // Ignore modifier keys so pressing Shift/Ctrl/Alt alone does not trigger alerts
+        if (['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab'].includes(e.key)) {
+          return;
+        }
+
+        const now = Date.now();
+        if (now - lastKeyToastTimeRef.current > 3500) {
+          lastKeyToastTimeRef.current = now;
+          if (e.key === 'Escape') {
+            toast.info('Use the red "Terminate Interview" button at the top to exit.', { toastId: 'esc-locked' });
+          } else if ((e.ctrlKey && e.key === 'r') || (e.metaKey && e.key === 'r') || e.key === 'F5') {
+            toast.warning('Page refresh is locked during the active interview.', { toastId: 'refresh-locked' });
+          } else {
+            toast.info('Keyboard input is disabled during the video interview.', { toastId: 'keyboard-locked' });
+          }
         }
       };
       window.addEventListener('keydown', handleKeyDown, true);
@@ -449,7 +517,10 @@ const VideoSessionView = () => {
       }
     } catch (err) {
       console.error('Error loading video session:', err);
-      toast.error('Failed to load video interview configurations');
+      toast.error(err.response?.data?.message || 'Failed to load video interview configurations');
+      if (err.response?.status === 400 || err.response?.status === 404) {
+        navigate('/mock-interviews');
+      }
     } finally {
       setLoading(false);
     }
@@ -1006,43 +1077,261 @@ const VideoSessionView = () => {
             });
           }
 
-          // 5. FACIAL EXPRESSION SIGNALS (Task 12)
-          let smileScore = 0;
-          let frownScore = 0;
-          let surpriseScore = 0;
+          // 5. REAL-TIME OBJECT IDENTIFICATION PROCTORING (IMAGE Mode via 2D Canvas Snapshot)
+          const nowObj = performance.now();
+          if (objectDetectorRef.current && (nowObj - lastObjectDetectTimeRef.current > 200)) {
+            lastObjectDetectTimeRef.current = nowObj;
+            try {
+              const canvas = canvasRef.current;
+              if (canvas) {
+                canvas.width = 320;
+                canvas.height = 240;
+                const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                if (ctx && video) {
+                  ctx.drawImage(video, 0, 0, 320, 240);
 
-          if (blendshapes) {
-            if (!loggedBlendshapesRef.current) {
-              loggedBlendshapesRef.current = true;
-              console.log('[MediaPipe Dev] Available Blendshapes:', blendshapes.map(c => c.categoryName).join(', '));
+                  // Calculate candidate face bounding box in 320x240 canvas space
+                  let faceBoundingBox = null;
+                  if (landmarks && landmarks.length > 0) {
+                    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+                    const keyFacePoints = [10, 152, 234, 454, 127, 356, 136, 365, 33, 263];
+                    for (const idx of keyFacePoints) {
+                      const pt = landmarks[idx] || landmarks[0];
+                      if (pt.x < minX) minX = pt.x;
+                      if (pt.x > maxX) maxX = pt.x;
+                      if (pt.y < minY) minY = pt.y;
+                      if (pt.y > maxY) maxY = pt.y;
+                    }
+                    faceBoundingBox = {
+                      minX: minX * 320,
+                      maxX: maxX * 320,
+                      minY: minY * 240,
+                      maxY: maxY * 240,
+                      width: (maxX - minX) * 320,
+                      height: (maxY - minY) * 240
+                    };
+                  }
+
+                  const objResults = objectDetectorRef.current.detect(canvas);
+                  if (objResults && objResults.detections) {
+                    const PROHIBITED_KEYWORDS = ['phone', 'cell', 'mobile', 'telephone', 'laptop', 'tablet', 'remote', 'tv', 'book'];
+                    const foundItems = [];
+                    const frameArea = 320 * 240;
+
+                    objResults.detections.forEach(det => {
+                      const cat = det.categories?.[0];
+                      if (!cat) return;
+                      const catLower = (cat.categoryName || '').toLowerCase();
+                      const isMatch = PROHIBITED_KEYWORDS.some(kw => catLower.includes(kw));
+                      if (!isMatch) return;
+
+                      const bb = det.boundingBox;
+                      const objWidth = bb ? (bb.width || 0) : 0;
+                      const objHeight = bb ? (bb.height || 0) : 0;
+                      const objArea = objWidth * objHeight;
+
+                      // Reject tiny noise specks (< 450px in 320x240)
+                      if (bb && (objWidth < 16 || objHeight < 20 || objArea < 450)) {
+                        return;
+                      }
+
+                      // Spatial face filter: Reject small features located entirely on the candidate's eyes/nose (e.g. eyeglasses frames)
+                      if (bb && faceBoundingBox) {
+                        const objCenterX = bb.originX + objWidth / 2;
+                        const objCenterY = bb.originY + objHeight / 2;
+                        const isInsideUpperFace = (
+                          objCenterX >= faceBoundingBox.minX &&
+                          objCenterX <= faceBoundingBox.maxX &&
+                          objCenterY >= faceBoundingBox.minY &&
+                          objCenterY <= (faceBoundingBox.minY + faceBoundingBox.height * 0.70)
+                        );
+                        if (isInsideUpperFace && objWidth < faceBoundingBox.width * 0.75) {
+                          return;
+                        }
+                      }
+
+                      // Calibrated confidence thresholds
+                      const isPhone = catLower.includes('phone') || catLower.includes('cell') || catLower.includes('mobile') || catLower.includes('telephone');
+                      const isRemote = catLower.includes('remote');
+                      const isLaptopTablet = catLower.includes('laptop') || catLower.includes('tablet');
+                      const isBook = catLower.includes('book');
+                      const isTv = catLower.includes('tv');
+
+                      const minScore = isPhone ? 0.22
+                        : isRemote ? 0.24
+                        : isLaptopTablet ? 0.25
+                        : isBook ? 0.26
+                        : isTv ? 0.35
+                        : 0.25;
+
+                      if (cat.score < minScore) return;
+                      if (isTv && objArea < frameArea * 0.04) return;
+
+                      const displayName = (isPhone || isRemote)
+                        ? 'Cell Phone / Mobile Device'
+                        : isBook
+                        ? 'Book / Notes / Documents'
+                        : (isLaptopTablet || isTv)
+                        ? 'Secondary Screen / Device'
+                        : cat.categoryName;
+
+                      foundItems.push({ name: displayName, score: cat.score });
+                    });
+
+                    if (foundItems.length > 0) {
+                      // Immediate activation on confirmed detection frame
+                      consecutiveObjectDetectionsRef.current = 3;
+                      const primaryItem = foundItems[0].name;
+                      setProhibitedObjectAlert({ active: true, label: primaryItem });
+                      const timeSinceLastEvent = Date.now() - lastProhibitedEventTimeRef.current;
+                      if (timeSinceLastEvent > 12000) {
+                        lastProhibitedEventTimeRef.current = Date.now();
+                        prohibitedObjectEventsRef.current++;
+                        addTimelineEvent('PROHIBITED_OBJECT', `Prohibited object detected: ${primaryItem}`);
+                        toast.warn(`⚠️ Proctoring Alert: ${primaryItem} detected in webcam frame!`, { toastId: 'prohibited-object-alert' });
+                      }
+                    } else {
+                      // Decay accumulator on clean frame
+                      if (consecutiveObjectDetectionsRef.current > 0) {
+                        consecutiveObjectDetectionsRef.current -= 1;
+                      }
+                      if (consecutiveObjectDetectionsRef.current <= 0) {
+                        consecutiveObjectDetectionsRef.current = 0;
+                        setProhibitedObjectAlert(prev => prev.active ? { active: false, label: '' } : prev);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (objErr) {
+              console.warn('[Object Detection] Execution notice:', objErr);
             }
+          }
 
+          // 6. REALISTIC MULTI-DIMENSIONAL FACIAL EXPRESSION ENGINE
+          let rawSmile = 0;
+          let rawFrown = 0;
+          let rawSurprise = 0;
+          let rawThinking = 0;
+          let rawSpeaking = 0;
+          let rawConfused = 0;
+
+          // A. Blendshapes calculation
+          if (blendshapes) {
             const getScore = (name) => {
               const found = blendshapes.find(c => c.categoryName === name);
               return found ? found.score : 0;
             };
-            
-            // Formula aggregates:
-            smileScore = (getScore('mouthSmileLeft') + getScore('mouthSmileRight')) / 2;
-            frownScore = (getScore('mouthFrownLeft') + getScore('mouthFrownRight') + getScore('browDownLeft') + getScore('browDownRight')) / 4;
-            surpriseScore = (getScore('browOuterUpLeft') + getScore('browOuterUpRight') + getScore('jawOpen') + getScore('eyeWideLeft') + getScore('eyeWideRight')) / 5;
+
+            const smileL = getScore('mouthSmileLeft');
+            const smileR = getScore('mouthSmileRight');
+            const dimpleL = getScore('mouthDimpleLeft');
+            const dimpleR = getScore('mouthDimpleRight');
+            const frownL = getScore('mouthFrownLeft');
+            const frownR = getScore('mouthFrownRight');
+            const browDownL = getScore('browDownLeft');
+            const browDownR = getScore('browDownRight');
+            const browInnerUp = getScore('browInnerUp');
+            const jawOpen = getScore('jawOpen');
+            const browOuterL = getScore('browOuterUpLeft');
+            const browOuterR = getScore('browOuterUpRight');
+            const eyeSquintL = getScore('eyeSquintLeft');
+            const eyeSquintR = getScore('eyeSquintRight');
+            const eyeLookUpL = getScore('eyeLookUpLeft');
+            const eyeLookUpR = getScore('eyeLookUpRight');
+            const mouthPressL = getScore('mouthPressLeft');
+            const mouthPressR = getScore('mouthPressRight');
+            const mouthPucker = getScore('mouthPucker');
+            const mouthUpperUpL = getScore('mouthUpperUpLeft');
+            const mouthUpperUpR = getScore('mouthUpperUpRight');
+
+            // 1. Confident / Smile
+            rawSmile = Math.max((smileL + smileR) / 2, Math.max(smileL, smileR) * 0.85, (dimpleL + dimpleR) * 0.65);
+
+            // 2. Stressed / Frown
+            rawFrown = Math.max((frownL + frownR) / 2, (browDownL + browDownR) / 2, Math.max(browDownL, browDownR) * 0.8);
+
+            // 3. Genuine Surprise: MUST have BOTH high raised brows AND wide open jaw!
+            if (browInnerUp > 0.28 && jawOpen > 0.35) {
+              rawSurprise = (browInnerUp * 0.5) + (jawOpen * 0.5);
+            } else {
+              rawSurprise = 0;
+            }
+
+            // 4. Confused / Perplexed: Asymmetrical brow raise / furrow
+            const browAsym = Math.abs(browOuterL - browOuterR);
+            const browDownAsym = Math.abs(browDownL - browDownR);
+            rawConfused = Math.max(browAsym * 1.2, browDownAsym * 1.1);
+
+            // 5. Thinking / Reflective: Eyes looked up or squinted with pressed lips or tilted head
+            const eyesUp = (eyeLookUpL + eyeLookUpR) / 2;
+            const eyeSquint = (eyeSquintL + eyeSquintR) / 2;
+            const lipPress = Math.max((mouthPressL + mouthPressR) / 2, mouthPucker);
+            rawThinking = Math.max(eyesUp * 0.8, eyeSquint * 0.7, (lipPress > 0.15 ? 0.35 : 0));
+
+            // 6. Speaking / Engaging: Active articulation with mouth open in speech range
+            if (isRecording && jawOpen > 0.12 && jawOpen < 0.45 && rawSurprise === 0 && rawSmile < 0.35) {
+              rawSpeaking = Math.max(jawOpen, (mouthUpperUpL + mouthUpperUpR) / 2);
+            }
           }
 
-          smoothedSmileRef.current = alpha * smileScore + (1 - alpha) * smoothedSmileRef.current;
-          smoothedFrownRef.current = alpha * frownScore + (1 - alpha) * smoothedFrownRef.current;
-          smoothedSurpriseRef.current = alpha * surpriseScore + (1 - alpha) * smoothedSurpriseRef.current;
+          // B. Geometric Landmark calculation (3D geometry enhancement)
+          if (landmarks && landmarks.length >= 468) {
+            const faceWidth = Math.hypot(landmarks[454].x - landmarks[234].x, landmarks[454].y - landmarks[234].y);
+            const faceHeight = Math.hypot(landmarks[152].x - landmarks[10].x, landmarks[152].y - landmarks[10].y);
+            const mouthWidth = Math.hypot(landmarks[291].x - landmarks[61].x, landmarks[291].y - landmarks[61].y);
+            const mouthOpen = Math.hypot(landmarks[14].y - landmarks[13].y, landmarks[14].x - landmarks[13].x);
+            const innerBrows = Math.hypot(landmarks[336].x - landmarks[107].x, landmarks[336].y - landmarks[107].y);
 
+            const mouthWidthRatio = mouthWidth / Math.max(0.001, faceWidth);
+            const mouthOpenRatio = mouthOpen / Math.max(0.001, faceHeight);
+            const browInnerRatio = innerBrows / Math.max(0.001, faceWidth);
+            const lipCornerY = (landmarks[61].y + landmarks[291].y) / 2;
+            const lipCenterY = (landmarks[0].y + landmarks[17].y) / 2;
+            const lipElevation = (lipCenterY - lipCornerY) / Math.max(0.001, faceHeight);
+
+            // Geometric boosts
+            if (mouthWidthRatio > 0.46 && lipElevation > 0.010) {
+              rawSmile = Math.max(rawSmile, 0.40);
+            }
+            if (browInnerRatio < 0.20 || lipElevation < -0.012) {
+              rawFrown = Math.max(rawFrown, 0.35);
+            }
+            if (Math.abs(roll) > 7 && mouthOpenRatio < 0.06) {
+              rawThinking = Math.max(rawThinking, 0.30);
+            }
+          }
+
+          // Smoothing (Temporal Exponential Moving Average)
+          smoothedSmileRef.current = 0.20 * rawSmile + 0.80 * smoothedSmileRef.current;
+          smoothedFrownRef.current = 0.20 * rawFrown + 0.80 * smoothedFrownRef.current;
+          smoothedSurpriseRef.current = 0.20 * rawSurprise + 0.80 * smoothedSurpriseRef.current;
+          smoothedThinkingRef.current = 0.20 * rawThinking + 0.80 * smoothedThinkingRef.current;
+          smoothedSpeakingRef.current = 0.20 * rawSpeaking + 0.80 * smoothedSpeakingRef.current;
+          smoothedConfusedRef.current = 0.20 * rawConfused + 0.80 * smoothedConfusedRef.current;
+
+          // Dominant Realistic Expression Resolution
           let currentExp = 'Neutral';
-          if (smoothedSmileRef.current > 0.22) {
+          if (smoothedSmileRef.current > 0.24) {
             currentExp = 'Smile';
             expressionSmileFramesRef.current++;
-          } else if (smoothedFrownRef.current > 0.20) {
-            currentExp = 'Frown';
-            expressionFrownFramesRef.current++;
-          } else if (smoothedSurpriseRef.current > 0.20) {
+          } else if (smoothedSurpriseRef.current > 0.32) {
             currentExp = 'Surprise';
             expressionSurpriseFramesRef.current++;
+          } else if (smoothedFrownRef.current > 0.25) {
+            currentExp = 'Frown';
+            expressionFrownFramesRef.current++;
+          } else if (smoothedConfusedRef.current > 0.24) {
+            currentExp = 'Confused';
+            expressionConfusedFramesRef.current++;
+          } else if (smoothedThinkingRef.current > 0.24) {
+            currentExp = 'Thinking';
+            expressionThinkingFramesRef.current++;
+          } else if (smoothedSpeakingRef.current > 0.25) {
+            currentExp = 'Speaking';
+            expressionSpeakingFramesRef.current++;
           } else {
+            currentExp = 'Neutral';
             expressionNeutralFramesRef.current++;
           }
           setCurrentEmotion(currentExp);
@@ -1068,10 +1357,13 @@ const VideoSessionView = () => {
               qTel.totalPitch += pitch;
               qTel.totalRoll += roll;
               
-              if (currentExp === 'Neutral') qTel.expressionDistribution.neutral++;
-              else if (currentExp === 'Smile') qTel.expressionDistribution.smile++;
-              else if (currentExp === 'Frown') qTel.expressionDistribution.frown++;
-              else if (currentExp === 'Surprise') qTel.expressionDistribution.surprise++;
+              if (currentExp === 'Neutral') qTel.expressionDistribution.neutral = (qTel.expressionDistribution.neutral || 0) + 1;
+              else if (currentExp === 'Smile') qTel.expressionDistribution.smile = (qTel.expressionDistribution.smile || 0) + 1;
+              else if (currentExp === 'Frown') qTel.expressionDistribution.frown = (qTel.expressionDistribution.frown || 0) + 1;
+              else if (currentExp === 'Surprise') qTel.expressionDistribution.surprise = (qTel.expressionDistribution.surprise || 0) + 1;
+              else if (currentExp === 'Thinking') qTel.expressionDistribution.thinking = (qTel.expressionDistribution.thinking || 0) + 1;
+              else if (currentExp === 'Speaking') qTel.expressionDistribution.speaking = (qTel.expressionDistribution.speaking || 0) + 1;
+              else if (currentExp === 'Confused') qTel.expressionDistribution.confused = (qTel.expressionDistribution.confused || 0) + 1;
             }
           }
 
@@ -1081,6 +1373,9 @@ const VideoSessionView = () => {
               smileScore: Number(smoothedSmileRef.current.toFixed(3)),
               frownScore: Number(smoothedFrownRef.current.toFixed(3)),
               surpriseScore: Number(smoothedSurpriseRef.current.toFixed(3)),
+              thinkingScore: Number(smoothedThinkingRef.current.toFixed(3)),
+              speakingScore: Number(smoothedSpeakingRef.current.toFixed(3)),
+              confusedScore: Number(smoothedConfusedRef.current.toFixed(3)),
               expression: currentExp,
               blendshapesAvailable: !!blendshapes
             });
@@ -1214,6 +1509,11 @@ const VideoSessionView = () => {
     // Stop recording state first
     stopUserRecording(false);
 
+    if (ttsFallbackTimeoutRef.current) {
+      clearTimeout(ttsFallbackTimeoutRef.current);
+      ttsFallbackTimeoutRef.current = null;
+    }
+
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       setIsSpeakingQuestion(true);
@@ -1221,6 +1521,10 @@ const VideoSessionView = () => {
       const utterance = new SpeechSynthesisUtterance(currentQ.questionText);
       
       utterance.onend = () => {
+        if (ttsFallbackTimeoutRef.current) {
+          clearTimeout(ttsFallbackTimeoutRef.current);
+          ttsFallbackTimeoutRef.current = null;
+        }
         setIsSpeakingQuestion(false);
         isSpeakingRef.current = false;
         if (!isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
@@ -1229,6 +1533,10 @@ const VideoSessionView = () => {
       };
       
       utterance.onerror = (e) => {
+        if (ttsFallbackTimeoutRef.current) {
+          clearTimeout(ttsFallbackTimeoutRef.current);
+          ttsFallbackTimeoutRef.current = null;
+        }
         setIsSpeakingQuestion(false);
         isSpeakingRef.current = false;
         // Ignore cancellations/interruptions (from question skip or submit)
@@ -1239,11 +1547,41 @@ const VideoSessionView = () => {
         startUserRecording();
       };
 
+      // Set fallback safety timer based on question length so speech never hangs
+      const wordCount = (currentQ.questionText || '').split(/\s+/).length;
+      const maxSpeakMs = Math.min(18000, Math.max(5000, Math.ceil(wordCount / 2.0) * 1000 + 2000));
+      ttsFallbackTimeoutRef.current = setTimeout(() => {
+        if (isSpeakingRef.current && !isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+          console.log('[TTS] Safety timer reached, transitioning to candidate answer mode');
+          if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+          setIsSpeakingQuestion(false);
+          isSpeakingRef.current = false;
+          startUserRecording();
+        }
+      }, maxSpeakMs);
+
       window.speechSynthesis.speak(utterance);
     } else {
       // Browser fallback if TTS not supported
       startUserRecording();
     }
+  };
+
+  const handleStartAnsweringNow = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    if (ttsFallbackTimeoutRef.current) {
+      clearTimeout(ttsFallbackTimeoutRef.current);
+      ttsFallbackTimeoutRef.current = null;
+    }
+    if (speakTimeoutRef.current) {
+      clearTimeout(speakTimeoutRef.current);
+      speakTimeoutRef.current = null;
+    }
+    setIsSpeakingQuestion(false);
+    isSpeakingRef.current = false;
+    startUserRecording();
   };
 
   // Launch User webcam recorder and STT listener
@@ -1609,13 +1947,17 @@ const VideoSessionView = () => {
           neutral: facePresentFramesRef.current > 0 ? Math.round((expressionNeutralFramesRef.current / facePresentFramesRef.current) * 100) : 0,
           smile: facePresentFramesRef.current > 0 ? Math.round((expressionSmileFramesRef.current / facePresentFramesRef.current) * 100) : 0,
           frown: facePresentFramesRef.current > 0 ? Math.round((expressionFrownFramesRef.current / facePresentFramesRef.current) * 100) : 0,
-          surprise: facePresentFramesRef.current > 0 ? Math.round((expressionSurpriseFramesRef.current / facePresentFramesRef.current) * 100) : 0
+          surprise: facePresentFramesRef.current > 0 ? Math.round((expressionSurpriseFramesRef.current / facePresentFramesRef.current) * 100) : 0,
+          thinking: facePresentFramesRef.current > 0 ? Math.round((expressionThinkingFramesRef.current / facePresentFramesRef.current) * 100) : 0,
+          speaking: facePresentFramesRef.current > 0 ? Math.round((expressionSpeakingFramesRef.current / facePresentFramesRef.current) * 100) : 0,
+          confused: facePresentFramesRef.current > 0 ? Math.round((expressionConfusedFramesRef.current / facePresentFramesRef.current) * 100) : 0
         },
         noFaceEvents: noFaceEventsRef.current,
         multipleFaceEvents: multipleFaceEventsRef.current,
         lookingAwayEvents: lookingAwayEventsRef.current,
         tabVisibilityChanges: tabVisibilityChangesRef.current,
         windowBlurEvents: windowBlurEventsRef.current,
+        prohibitedObjectEvents: prohibitedObjectEventsRef.current || 0,
         proctoringEvents: proctoringEventsRef.current,
 
         // Debug & Evaluation additional fields (Task 14)
@@ -1646,7 +1988,9 @@ const VideoSessionView = () => {
           happy: compiledMetrics.expressionDistribution.smile,
           neutral: compiledMetrics.expressionDistribution.neutral,
           surprised: compiledMetrics.expressionDistribution.surprise,
-          nervous: compiledMetrics.expressionDistribution.frown
+          nervous: compiledMetrics.expressionDistribution.frown,
+          thinking: compiledMetrics.expressionDistribution.thinking,
+          speaking: compiledMetrics.expressionDistribution.speaking
         },
         timeline: timelineEvents,
         videoMetrics: compiledMetrics
@@ -1705,11 +2049,15 @@ const VideoSessionView = () => {
       expressionSmileFrames: expressionSmileFramesRef.current,
       expressionFrownFrames: expressionFrownFramesRef.current,
       expressionSurpriseFrames: expressionSurpriseFramesRef.current,
+      expressionThinkingFrames: expressionThinkingFramesRef.current,
+      expressionSpeakingFrames: expressionSpeakingFramesRef.current,
+      expressionConfusedFrames: expressionConfusedFramesRef.current,
       noFaceEvents: noFaceEventsRef.current,
       multipleFaceEvents: multipleFaceEventsRef.current,
       lookingAwayEvents: lookingAwayEventsRef.current,
       tabVisibilityChanges: tabVisibilityChangesRef.current,
-      windowBlurEvents: windowBlurEventsRef.current
+      windowBlurEvents: windowBlurEventsRef.current,
+      prohibitedObjectEvents: prohibitedObjectEventsRef.current || 0
     }));
   };
 
@@ -1761,10 +2109,14 @@ const VideoSessionView = () => {
   };
 
   const handleTerminateInterview = async () => {
+    if (isTerminatingRef.current) return;
     const confirmTerm = window.confirm(
       'Are you sure you want to terminate this interview? Your progress will be marked as "Terminated in between" in your interview history.'
     );
     if (!confirmTerm) return;
+
+    isTerminatingRef.current = true;
+    setIsTerminating(true);
 
     try {
       toast.info('Terminating interview session...');
@@ -1881,9 +2233,10 @@ const VideoSessionView = () => {
               </button>
               <button 
                 onClick={handleTerminateInterview}
+                disabled={isTerminating}
                 className="btn btn-outline-danger w-100 fw-bold py-2 rounded-3"
               >
-                Terminate Interview
+                {isTerminating ? 'Terminating...' : 'Terminate Interview'}
               </button>
             </div>
           </div>
@@ -1899,11 +2252,12 @@ const VideoSessionView = () => {
         </div>
         <button
           onClick={handleTerminateInterview}
+          disabled={isTerminating}
           className="btn btn-sm btn-danger px-3 py-1.5 rounded-3 fw-bold d-flex align-items-center gap-1.5 shadow"
           style={{ fontSize: '0.8rem' }}
           title="Terminate and exit mock interview"
         >
-          <FiAlertCircle /> Terminate Interview
+          <FiAlertCircle /> {isTerminating ? 'Terminating...' : 'Terminate Interview'}
         </button>
       </div>
 
@@ -1942,10 +2296,10 @@ const VideoSessionView = () => {
       <div className="glass-panel p-0 border border-secondary shadow-lg overflow-hidden position-relative animate-fade-in" style={{ borderRadius: '24px', backgroundColor: '#090d16' }}>
         
         {/* Split Screen Grid */}
-        <div className="row g-0 flex-md-row flex-column align-items-stretch" style={{ minHeight: '520px' }}>
+        <div className="row g-0 flex-md-row flex-column align-items-stretch" style={{ height: '440px', minHeight: '440px' }}>
           
           {/* Left Half: AI Interviewer */}
-          <div className="col-md-6 border-end border-secondary position-relative bg-dark d-flex flex-column align-items-stretch animate-fade-in" style={{ height: '520px' }}>
+          <div className="col-md-6 border-end border-secondary position-relative bg-dark d-flex flex-column align-items-stretch animate-fade-in" style={{ height: '100%', minHeight: '440px' }}>
             <img 
               src={avatarImg} 
               alt="AI Interviewer" 
@@ -1966,13 +2320,13 @@ const VideoSessionView = () => {
             )}
 
             {/* AI Avatar metadata labels */}
-            <div className="position-absolute bottom-4 start-4 z-3 bg-dark bg-opacity-75 border border-secondary px-2.5 py-1 rounded text-white small" style={{ fontSize: '0.74rem' }}>
+            <div className="bg-dark bg-opacity-75 border border-secondary px-2.5 py-1 rounded text-white small" style={{ position: 'absolute', bottom: '12px', left: '12px', zIndex: 10, fontSize: '0.74rem' }}>
               🤖 AI Interviewer (Virtual Human)
             </div>
 
             {/* AI speaking active state waves */}
             {isSpeakingQuestion && (
-              <div className="position-absolute bottom-4 end-4 z-3 d-flex align-items-end gap-1" style={{ height: '20px' }}>
+              <div className="d-flex align-items-end gap-1" style={{ position: 'absolute', bottom: '12px', right: '12px', zIndex: 10, height: '20px' }}>
                 <span className="bg-primary animate-audio-bar-1" style={{ width: '3px', height: '100%', backgroundColor: 'var(--primary-purple)' }} />
                 <span className="bg-primary animate-audio-bar-2" style={{ width: '3px', height: '80%', backgroundColor: 'var(--primary-purple)' }} />
                 <span className="bg-primary animate-audio-bar-3" style={{ width: '3px', height: '60%', backgroundColor: 'var(--primary-purple)' }} />
@@ -1981,7 +2335,7 @@ const VideoSessionView = () => {
           </div>
 
           {/* Right Half: Candidate Webcam Feed */}
-          <div className="col-md-6 position-relative bg-dark d-flex flex-column align-items-stretch animate-fade-in" style={{ height: '520px' }}>
+          <div className="col-md-6 position-relative bg-dark d-flex flex-column align-items-stretch animate-fade-in" style={{ height: '100%', minHeight: '440px' }}>
             <video 
               ref={videoRef} 
               autoPlay 
@@ -1993,13 +2347,32 @@ const VideoSessionView = () => {
             <canvas ref={canvasRef} width="320" height="240" className="d-none" />
 
             {/* Candidate metadata label */}
-            <div className="position-absolute bottom-4 start-4 z-3 bg-dark bg-opacity-75 border border-secondary px-2.5 py-1 rounded text-white small" style={{ fontSize: '0.74rem' }}>
+            <div className="bg-dark bg-opacity-75 border border-secondary px-2.5 py-1 rounded text-white small" style={{ position: 'absolute', bottom: '12px', left: '12px', zIndex: 10, fontSize: '0.74rem' }}>
               👤 You (Candidate) {isRecording ? <span className="text-danger animate-pulse ms-1">● REC</span> : <span className="text-muted ms-1">● STANDBY</span>}
             </div>
 
+            {/* Prohibited Object Detection Proctoring Alert */}
+            {prohibitedObjectAlert.active && (
+              <div 
+                className="bg-danger bg-opacity-95 text-white p-2.5 rounded-3 text-start small border border-danger d-flex align-items-center gap-2 shadow-lg animate-pulse" 
+                style={{ position: 'absolute', top: '12px', left: '12px', right: '12px', zIndex: 25, boxShadow: '0 4px 20px rgba(220, 38, 38, 0.6)' }}
+              >
+                <FiAlertCircle className="fs-4 flex-shrink-0 text-warning" />
+                <div>
+                  <div className="fw-bold" style={{ fontSize: '0.78rem' }}>⚠️ Proctoring Alert: Prohibited Object Detected</div>
+                  <div className="small opacity-90" style={{ fontSize: '0.72rem' }}>
+                    <strong className="text-warning">{prohibitedObjectAlert.label}</strong> detected in camera view. Please remove all secondary devices and materials immediately.
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Posture alerts / facial cues overlays */}
             {postureWarning && (
-              <div className="position-absolute top-4 start-4 end-4 z-3 bg-danger bg-opacity-90 text-white p-2 rounded-3 text-start small border border-danger d-flex align-items-center gap-2">
+              <div 
+                className="bg-danger bg-opacity-90 text-white p-2 rounded-3 text-start small border border-danger d-flex align-items-center gap-2 shadow"
+                style={{ position: 'absolute', top: prohibitedObjectAlert.active ? '70px' : '12px', left: '12px', right: '12px', zIndex: 20 }}
+              >
                 <FiAlertCircle className="fs-5 flex-shrink-0" />
                 <span>{postureWarning}</span>
               </div>
@@ -2007,7 +2380,10 @@ const VideoSessionView = () => {
 
             {/* Live behavioral telemetry HUD in candidates view */}
             {isRecording && (
-              <div className="position-absolute bottom-4 end-4 z-3 bg-dark bg-opacity-75 p-3 rounded-3 text-start text-white small border border-secondary" style={{ fontSize: '0.74rem', minWidth: '185px' }}>
+              <div 
+                className="p-3 rounded-3 text-start text-white small border border-secondary shadow-lg" 
+                style={{ position: 'absolute', bottom: '12px', right: '12px', zIndex: 10, fontSize: '0.74rem', minWidth: '190px', backgroundColor: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.15)' }}
+              >
                 {pipelineStatus === 'LOADING' ? (
                   <div className="text-center text-info py-1">
                     <span className="spinner-border spinner-border-sm me-2" role="status" style={{ width: '0.8rem', height: '0.8rem' }} />
@@ -2040,7 +2416,15 @@ const VideoSessionView = () => {
                     <div className="d-flex align-items-center justify-content-between mb-1.5">
                       <span className="text-muted">Expression:</span>
                       <span className="fw-bold text-info">
-                        {postureStatus === 'No Face Detected' ? 'Not available' : currentEmotion}
+                        {postureStatus === 'No Face Detected' 
+                          ? 'Not available' 
+                          : currentEmotion === 'Smile' ? '😊 Confident'
+                          : currentEmotion === 'Thinking' ? '🤔 Thinking'
+                          : currentEmotion === 'Speaking' ? '🗣️ Speaking'
+                          : currentEmotion === 'Confused' ? '🤨 Perplexed'
+                          : currentEmotion === 'Frown' ? '😟 Stressed'
+                          : currentEmotion === 'Surprise' ? '😲 Surprised'
+                          : '😐 Focused'}
                       </span>
                     </div>
                     <div className="d-flex align-items-center justify-content-between">
@@ -2057,37 +2441,75 @@ const VideoSessionView = () => {
 
         </div>
 
-        {/* Bottom Banner overlay: Subtitles and Timer */}
-        <div className="position-absolute bottom-0 start-0 end-0 bg-black bg-opacity-80 p-4 border-top border-secondary text-start z-3" style={{ backgroundColor: 'rgba(9, 13, 22, 0.9)' }}>
-          <div className="d-flex justify-content-between align-items-center mb-2">
-            <span className="badge text-uppercase fw-bold px-2.5 py-1" style={{ fontSize: '0.68rem', backgroundColor: 'var(--primary-purple)', color: 'white' }}>
-              Question {currentIndex + 1} of {questions.length}
-            </span>
-            
-            {/* Visual Countdown Timer */}
-            {isRecording && (
-              <span className={`badge ${timeLeftSec <= 15 ? 'bg-danger animate-pulse' : 'bg-secondary'} fw-bold px-2.5 py-1 d-flex align-items-center gap-1.5`}>
-                <FiClock /> Time Remaining: {timeLeftSec}s
+        {/* Question Subtitle & Timer Bar (Non-overlapping structured card footer) */}
+        <div className="p-3.5 p-md-4 border-top border-secondary text-start" style={{ backgroundColor: 'rgba(9, 13, 22, 0.96)' }}>
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+            <div className="d-flex align-items-center gap-2">
+              <span className="badge text-uppercase fw-bold px-2.5 py-1" style={{ fontSize: '0.72rem', backgroundColor: 'var(--primary-purple)', color: 'white' }}>
+                Question {currentIndex + 1} of {questions.length}
               </span>
-            )}
+              {isSpeakingQuestion ? (
+                <span className="badge bg-warning bg-opacity-20 text-warning border border-warning border-opacity-25 px-2.5 py-1 d-inline-flex align-items-center gap-1.5" style={{ fontSize: '0.72rem' }}>
+                  <FiVolume2 className="animate-pulse" /> AI is asking the question...
+                </span>
+              ) : isRecording ? (
+                <span className="badge bg-danger bg-opacity-20 text-danger border border-danger border-opacity-25 px-2.5 py-1 d-inline-flex align-items-center gap-1.5" style={{ fontSize: '0.72rem' }}>
+                  <span className="text-danger animate-pulse">●</span> Your Turn to Answer
+                </span>
+              ) : null}
+            </div>
+
+            {/* Timer & Action buttons */}
+            <div className="d-flex align-items-center gap-2">
+              {isSpeakingQuestion ? (
+                <button
+                  onClick={handleStartAnsweringNow}
+                  className="btn btn-sm btn-outline-info rounded-pill px-3 py-1 fw-bold text-white d-inline-flex align-items-center gap-1.5 shadow-sm"
+                  style={{ fontSize: '0.76rem' }}
+                  title="Skip speech and start recording your answer now"
+                >
+                  <FiMic /> Start Answering Now
+                </button>
+              ) : isRecording ? (
+                <span className={`badge ${timeLeftSec <= 15 ? 'bg-danger animate-pulse' : 'bg-primary'} fw-bold px-3 py-1.5 d-inline-flex align-items-center gap-1.5 shadow`} style={{ fontSize: '0.84rem' }}>
+                  <FiClock /> Time Remaining: {timeLeftSec}s
+                </span>
+              ) : (
+                <span className="badge bg-secondary fw-bold px-2.5 py-1 d-inline-flex align-items-center gap-1" style={{ fontSize: '0.72rem' }}>
+                  <FiClock /> 90s Answer Limit
+                </span>
+              )}
+            </div>
           </div>
-          <p className="text-white fw-semibold mb-0" style={{ fontSize: '1rem', lineHeight: '1.4', minHeight: '44px' }}>
-            {isSpeakingQuestion ? 'AI is speaking...' : currentQuestion.questionText}
+
+          {/* Question Text */}
+          <p className="text-white fw-bold mb-2 mt-1" style={{ fontSize: '1.04rem', lineHeight: '1.45' }}>
+            {currentQuestion?.questionText}
           </p>
 
-          {/* Progress Countdown Bar */}
-          {isRecording && (
-            <div className="progress mt-3 bg-secondary" style={{ height: '4px' }}>
+          {/* Live speech transcription subtitle preview */}
+          {isRecording && liveTranscript && (
+            <div className="text-info small fst-italic mb-2 text-truncate" style={{ opacity: 0.92, fontSize: '0.84rem' }}>
+              “{liveTranscript}”
+            </div>
+          )}
+
+          {/* Countdown / Audio Progress Bar */}
+          {isRecording ? (
+            <div className="progress mt-2 bg-dark border border-secondary" style={{ height: '5px' }}>
               <div 
-                className={`progress-bar ${timeLeftSec <= 15 ? 'bg-danger' : 'bg-primary'}`}
+                className={`progress-bar ${timeLeftSec <= 15 ? 'bg-danger' : 'bg-success'}`}
                 style={{ 
                   width: `${(timeLeftSec / 90) * 100}%`,
-                  backgroundColor: timeLeftSec <= 15 ? '' : 'var(--primary-purple)',
                   transition: 'width 1s linear'
                 }} 
               />
             </div>
-          )}
+          ) : isSpeakingQuestion ? (
+            <div className="progress mt-2 bg-dark" style={{ height: '3px' }}>
+              <div className="progress-bar progress-bar-striped progress-bar-animated bg-warning" style={{ width: '100%' }} />
+            </div>
+          ) : null}
         </div>
 
       </div>

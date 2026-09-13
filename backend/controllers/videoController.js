@@ -94,6 +94,7 @@ const calculateInterviewScore = ({
     if (typeUpper === 'NO_FACE' || typeUpper === 'NO-FACE') proctoringScore -= 20;
     if (typeUpper === 'TAB_HIDDEN' || typeUpper === 'TAB-HIDDEN') proctoringScore -= 25;
     if (typeUpper === 'WINDOW_BLUR' || typeUpper === 'WINDOW-BLUR') proctoringScore -= 15;
+    if (typeUpper === 'PROHIBITED_OBJECT' || typeUpper === 'PROHIBITED-OBJECT' || typeUpper === 'OBJECT_DETECTED') proctoringScore -= 25;
   });
   proctoringScore = Math.max(0, proctoringScore);
 
@@ -614,6 +615,7 @@ exports.evaluateSession = async (req, res, next) => {
         if (typeUpper === 'NO_FACE' || typeUpper === 'NO-FACE') qProcScore -= 20;
         if (typeUpper === 'TAB_HIDDEN' || typeUpper === 'TAB-HIDDEN') qProcScore -= 25;
         if (typeUpper === 'WINDOW_BLUR' || typeUpper === 'WINDOW-BLUR') qProcScore -= 15;
+        if (typeUpper === 'PROHIBITED_OBJECT' || typeUpper === 'PROHIBITED-OBJECT' || typeUpper === 'OBJECT_DETECTED') qProcScore -= 25;
       });
       qProcScore = Math.max(0, qProcScore);
 
@@ -882,7 +884,8 @@ const syncVideoSessionQuestions = async (sessionCode, userId) => {
           title: parentSession.title || `AI Video Interview - ${parentSession.role}`,
           role: parentSession.role,
           difficulty: parentSession.difficulty,
-          transcript: []
+          transcript: [],
+          resumedTerminatedCount: parentSession.resumedTerminatedCount || 0
         });
         console.log(`[Video Sync] VideoInterview created & loaded: ${videoSession._id}`);
       } catch (createErr) {
@@ -912,10 +915,33 @@ const syncVideoSessionQuestions = async (sessionCode, userId) => {
       console.log(`[Video Sync] Questions copied: ${questions.length}`);
     }
 
+    // Handle 1-time resume if session was terminated in between
+    if (videoSession.status === 'Terminated' || parentSession.status === 'Terminated') {
+      const currentResumeCount = (videoSession.resumedTerminatedCount || 0) || (parentSession.resumedTerminatedCount || 0);
+      if (currentResumeCount < 1) {
+        videoSession.resumedTerminatedCount = 1;
+        videoSession.status = 'InProgress';
+        await videoSession.save();
+        parentSession.resumedTerminatedCount = 1;
+        parentSession.status = 'InProgress';
+        await parentSession.save();
+        console.log(`[Video Sync] Video session ${sessionCode} resumed from Terminated state (1-time resume granted)`);
+      }
+    }
+
     return { parentSession, videoSession, questionsCount: (videoSession && videoSession.transcript ? videoSession.transcript.length : 0) || questions.length };
   }
 
   if (videoSession) {
+    if (videoSession.status === 'Terminated') {
+      const currentResumeCount = videoSession.resumedTerminatedCount || 0;
+      if (currentResumeCount < 1) {
+        videoSession.resumedTerminatedCount = 1;
+        videoSession.status = 'InProgress';
+        await videoSession.save();
+        console.log(`[Video Sync] Video session ${sessionCode} resumed from Terminated state (1-time resume granted)`);
+      }
+    }
     return { parentSession: null, videoSession, questionsCount: videoSession.transcript ? videoSession.transcript.length : 0 };
   }
 
@@ -941,6 +967,15 @@ exports.getReport = async (req, res, next) => {
 
     if (!videoSession) {
       return res.status(404).json({ success: false, message: 'Video interview session not found' });
+    }
+
+    if (videoSession.status === 'Terminated' && (videoSession.resumedTerminatedCount || 0) >= 1) {
+      return res.status(400).json({
+        success: false,
+        status: 'terminated_limit_reached',
+        canResume: false,
+        message: 'This video interview was terminated and has already used its one-time resume limit. Please retake the interview.'
+      });
     }
 
     if (questionsCount === 0 && parentSession && (parentSession.status === 'Creating' || parentSession.status === 'Generating')) {

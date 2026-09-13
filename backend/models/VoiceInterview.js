@@ -97,9 +97,13 @@ const VoiceInterviewSchema = new mongoose.Schema({
     skill: { type: String },
     stars: { type: Number, default: 4 }
   }],
+  resumedTerminatedCount: {
+    type: Number,
+    default: 0
+  },
   status: {
     type: String,
-    enum: ['InProgress', 'Completed'],
+    enum: ['InProgress', 'Completed', 'Terminated'],
     default: 'InProgress'
   },
   completedAt: {

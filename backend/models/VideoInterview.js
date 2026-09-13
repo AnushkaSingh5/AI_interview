@@ -67,7 +67,10 @@ const VideoInterviewSchema = new mongoose.Schema({
         neutral: { type: Number, default: 0 },
         smile: { type: Number, default: 0 },
         frown: { type: Number, default: 0 },
-        surprise: { type: Number, default: 0 }
+        surprise: { type: Number, default: 0 },
+        thinking: { type: Number, default: 0 },
+        speaking: { type: Number, default: 0 },
+        confused: { type: Number, default: 0 }
       },
       headPoseDistribution: {
         neutral: { type: Number, default: 80 },
@@ -136,7 +139,9 @@ const VideoInterviewSchema = new mongoose.Schema({
     happy: { type: Number, default: 0 },
     neutral: { type: Number, default: 0 },
     surprised: { type: Number, default: 0 },
-    nervous: { type: Number, default: 0 }
+    nervous: { type: Number, default: 0 },
+    thinking: { type: Number, default: 0 },
+    speaking: { type: Number, default: 0 }
   },
   bodyLanguage: {
     posture: { type: String, default: 'Good' },
@@ -161,13 +166,17 @@ const VideoInterviewSchema = new mongoose.Schema({
       neutral: { type: Number, default: 0 },
       smile: { type: Number, default: 0 },
       frown: { type: Number, default: 0 },
-      surprise: { type: Number, default: 0 }
+      surprise: { type: Number, default: 0 },
+      thinking: { type: Number, default: 0 },
+      speaking: { type: Number, default: 0 },
+      confused: { type: Number, default: 0 }
     },
     noFaceEvents: { type: Number, default: 0 },
     multipleFaceEvents: { type: Number, default: 0 },
     lookingAwayEvents: { type: Number, default: 0 },
     tabVisibilityChanges: { type: Number, default: 0 },
     windowBlurEvents: { type: Number, default: 0 },
+    prohibitedObjectEvents: { type: Number, default: 0 },
     proctoringEvents: [{
       type: { type: String, required: true },
       startedAt: { type: Date, required: true },
@@ -198,6 +207,10 @@ const VideoInterviewSchema = new mongoose.Schema({
     default: 0
   },
   overallScore: {
+    type: Number,
+    default: 0
+  },
+  resumedTerminatedCount: {
     type: Number,
     default: 0
   },

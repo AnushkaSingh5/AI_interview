@@ -208,9 +208,13 @@ const VoiceCheck = () => {
             className="btn btn-primary-purple text-white py-2.5 px-4 flex-grow-1 d-flex align-items-center justify-content-center gap-2 shadow-sm"
           >
             <FiPlay style={{ fill: 'white' }} />
-            <span>{loading ? 'Initializing...' : 'Launch Voice Interview'}</span>
+            <span>{loading ? 'Initializing...' : 'Launch Voice Interview (Fullscreen Lockdown)'}</span>
           </button>
         </div>
+
+        <p className="text-muted text-center small mt-3 mb-0" style={{ fontSize: '0.75rem' }}>
+          🔒 Note: Voice interview will automatically enter strict fullscreen lockdown mode to preserve integrity.
+        </p>
       </div>
     </div>
   );

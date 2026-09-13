@@ -172,22 +172,34 @@ const VideoReportView = () => {
             {/* Expression Distribution column */}
             <div className="col-md-4 border-end">
               <strong className="d-block small text-muted text-uppercase mb-3">Visible Expression Distribution</strong>
-              <div className="d-flex flex-column gap-2.5">
+              <div className="d-flex flex-column gap-2">
                 <div className="d-flex justify-content-between">
-                  <span className="text-muted small">Neutral</span>
+                  <span className="text-muted small">😐 Focused / Neutral</span>
                   <strong className="text-dark">{session.videoMetrics.expressionDistribution?.neutral ?? 0}%</strong>
                 </div>
                 <div className="d-flex justify-content-between">
-                  <span className="text-muted small">Smile Signal</span>
+                  <span className="text-muted small">😊 Confident / Smile</span>
                   <strong className="text-success">{session.videoMetrics.expressionDistribution?.smile ?? 0}%</strong>
                 </div>
                 <div className="d-flex justify-content-between">
-                  <span className="text-muted small">Frown Signal</span>
+                  <span className="text-muted small">🤔 Thinking</span>
+                  <strong className="text-primary">{session.videoMetrics.expressionDistribution?.thinking ?? 0}%</strong>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span className="text-muted small">🗣️ Speaking</span>
+                  <strong className="text-info">{session.videoMetrics.expressionDistribution?.speaking ?? 0}%</strong>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span className="text-muted small">🤨 Perplexed</span>
+                  <strong className="text-warning">{session.videoMetrics.expressionDistribution?.confused ?? 0}%</strong>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span className="text-muted small">😟 Stressed</span>
                   <strong className="text-danger">{session.videoMetrics.expressionDistribution?.frown ?? 0}%</strong>
                 </div>
                 <div className="d-flex justify-content-between">
-                  <span className="text-muted small">Surprise Signal</span>
-                  <strong className="text-warning">{session.videoMetrics.expressionDistribution?.surprise ?? 0}%</strong>
+                  <span className="text-muted small">😲 Surprised</span>
+                  <strong className="text-secondary">{session.videoMetrics.expressionDistribution?.surprise ?? 0}%</strong>
                 </div>
               </div>
             </div>
@@ -222,6 +234,12 @@ const VideoReportView = () => {
                   <strong className="text-danger">
                     {session.videoMetrics.tabVisibilityChanges || 0} event(s)
                     {session.videoMetrics.proctoringEvents ? ` / ${((session.videoMetrics.proctoringEvents.filter(e => e.type === 'TAB_HIDDEN').reduce((acc, e) => acc + e.durationMs, 0)) / 1000).toFixed(1)} sec` : ''}
+                  </strong>
+                </div>
+                <div className="d-flex justify-content-between">
+                  <span className="text-muted small">Prohibited Object Events</span>
+                  <strong className="text-danger">
+                    {session.videoMetrics.prohibitedObjectEvents || 0} event(s)
                   </strong>
                 </div>
               </div>
@@ -271,24 +289,29 @@ const VideoReportView = () => {
 
             <div className="d-flex flex-column gap-2" style={{ maxHeight: '280px', overflowY: 'auto' }}>
               {session.timeline && session.timeline.length > 0 ? (
-                session.timeline.map((event, idx) => (
-                  <div 
-                    key={idx} 
-                    onClick={() => handleTimelineClick(event.timestamp)}
-                    className="border rounded-3 p-2.5 bg-light bg-opacity-25 d-flex align-items-center justify-content-between cursor-pointer hover-bg-light transition-all"
-                    style={{ cursor: 'pointer', fontSize: '0.8rem' }}
-                  >
-                    <div className="d-flex align-items-center gap-2">
-                      <span className="badge bg-danger bg-opacity-10 text-danger fw-bold">
-                        {event.timestamp}
+                session.timeline.map((event, idx) => {
+                  const isObjectEvent = event.eventType === 'PROHIBITED_OBJECT' || event.eventType === 'OBJECT_DETECTED';
+                  return (
+                    <div 
+                      key={idx} 
+                      onClick={() => handleTimelineClick(event.timestamp)}
+                      className={`border rounded-3 p-2.5 ${isObjectEvent ? 'bg-danger bg-opacity-10 border-danger' : 'bg-light bg-opacity-25'} d-flex align-items-center justify-content-between cursor-pointer hover-bg-light transition-all`}
+                      style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                    >
+                      <div className="d-flex align-items-center gap-2">
+                        <span className={`badge ${isObjectEvent ? 'bg-danger text-white' : 'bg-danger bg-opacity-10 text-danger'} fw-bold`}>
+                          {event.timestamp}
+                        </span>
+                        <span className="text-dark fw-semibold ms-1">
+                          {isObjectEvent ? `⚠️ ${event.description}` : event.description}
+                        </span>
+                      </div>
+                      <span className={`badge ${isObjectEvent ? 'bg-danger text-white' : 'bg-secondary bg-opacity-10 text-secondary'} small text-uppercase`} style={{ fontSize: '0.66rem' }}>
+                        {event.eventType}
                       </span>
-                      <span className="text-dark fw-semibold ms-1">{event.description}</span>
                     </div>
-                    <span className="text-muted small text-uppercase" style={{ fontSize: '0.66rem' }}>
-                      {event.eventType}
-                    </span>
-                  </div>
-                ))
+                  );
+                })
               ) : (
                 <div className="py-4 text-center text-muted small">
                   Timeline analyzer successfully finished with zero behavioral anomalies detected.

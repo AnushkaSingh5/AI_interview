@@ -111,7 +111,8 @@ const syncVoiceSessionQuestions = async (sessionCode, userId) => {
         sessionTitle: parentSession.title || `AI Voice Interview - ${parentSession.role}`,
         role: parentSession.role,
         difficulty: parentSession.difficulty,
-        questionCount: parentSession.questionCount || questions.length || 5
+        questionCount: parentSession.questionCount || questions.length || 5,
+        resumedTerminatedCount: parentSession.resumedTerminatedCount || 0
       });
       console.log(`[Voice Sync] VoiceInterview created & loaded: ${voiceSession._id}`);
     }
@@ -131,11 +132,34 @@ const syncVoiceSessionQuestions = async (sessionCode, userId) => {
       console.log(`[Voice Sync] Questions copied: ${questions.length}`);
     }
 
+    // Handle 1-time resume if session was terminated in between
+    if (voiceSession.status === 'Terminated' || parentSession.status === 'Terminated') {
+      const currentResumeCount = (voiceSession.resumedTerminatedCount || 0) || (parentSession.resumedTerminatedCount || 0);
+      if (currentResumeCount < 1) {
+        voiceSession.resumedTerminatedCount = 1;
+        voiceSession.status = 'InProgress';
+        await voiceSession.save();
+        parentSession.resumedTerminatedCount = 1;
+        parentSession.status = 'InProgress';
+        await parentSession.save();
+        console.log(`[Voice Sync] Voice session ${sessionCode} resumed from Terminated state (1-time resume granted)`);
+      }
+    }
+
     console.log(`[Voice Sync] Voice session loaded: ${parentSession.interviewId} (${voiceSession.questions.length || questions.length} questions)`);
     return { parentSession, voiceSession, questionsCount: voiceSession.questions.length || questions.length };
   }
 
   if (voiceSession) {
+    if (voiceSession.status === 'Terminated') {
+      const currentResumeCount = voiceSession.resumedTerminatedCount || 0;
+      if (currentResumeCount < 1) {
+        voiceSession.resumedTerminatedCount = 1;
+        voiceSession.status = 'InProgress';
+        await voiceSession.save();
+        console.log(`[Voice Sync] Voice session ${sessionCode} resumed from Terminated state (1-time resume granted)`);
+      }
+    }
     console.log(`[Voice Sync] Voice session loaded: ${voiceSession.sessionId} (${voiceSession.questions.length} questions)`);
     return { parentSession: null, voiceSession, questionsCount: voiceSession.questions.length };
   }
@@ -510,6 +534,15 @@ exports.getVoiceReport = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Voice interview session not found' });
     }
 
+    if (voiceSession.status === 'Terminated' && (voiceSession.resumedTerminatedCount || 0) >= 1) {
+      return res.status(400).json({
+        success: false,
+        status: 'terminated_limit_reached',
+        canResume: false,
+        message: 'This voice interview was terminated and has already used its one-time resume limit. Please retake the interview.'
+      });
+    }
+
     if (questionsCount === 0 && parentSession && (parentSession.status === 'Creating' || parentSession.status === 'Generating')) {
       return res.status(200).json({
         success: true,
@@ -607,6 +640,49 @@ exports.saveVoiceTranscript = async (req, res, next) => {
         message: 'Transcript saved atomically',
         question: updatedQuestion
       });
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Terminate voice interview session in between
+exports.terminateVoiceSession = async (req, res, next) => {
+  try {
+    const { sessionId, reason } = req.body;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: 'Session ID is required' });
+    }
+
+    const voiceSession = await findVoiceSession(sessionId, req.user._id);
+    if (voiceSession) {
+      voiceSession.status = 'Terminated';
+      await voiceSession.save();
+    }
+
+    const isMongoId = mongoose.Types.ObjectId.isValid(sessionId) && String(new mongoose.Types.ObjectId(sessionId)) === String(sessionId);
+    await InterviewSession.updateOne(
+      {
+        $or: [
+          { interviewId: sessionId },
+          ...(voiceSession ? [{ interviewId: voiceSession.sessionId }] : []),
+          ...(isMongoId ? [{ _id: sessionId }] : [])
+        ],
+        user: req.user._id
+      },
+      {
+        $set: {
+          status: 'Terminated',
+          completedAt: new Date()
+        }
+      }
+    );
+
+    console.log(`[Voice Controller] Session ${sessionId} marked as Terminated (Reason: ${reason || 'User cancelled'})`);
+
+    res.status(200).json({
+      success: true,
+      message: 'Voice interview session terminated successfully'
     });
   } catch (error) {
     next(error);

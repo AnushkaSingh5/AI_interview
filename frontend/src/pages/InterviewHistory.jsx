@@ -229,7 +229,7 @@ const InterviewHistory = () => {
             <select value={status} onChange={(e) => setStatus(e.target.value)} className="form-select form-select-sm">
               <option value="">All</option>
               <option value="Completed">Graded</option>
-              <option value="InProgress">In Progress</option>
+              <option value="Terminated">Terminated in between</option>
               <option value="AwaitingEvaluation">Evaluating</option>
             </select>
           </div>
@@ -321,15 +321,15 @@ const InterviewHistory = () => {
                     </td>
                     <td>{new Date(item.completedAt).toLocaleDateString()}</td>
                     <td>
-                      {item.overallScore !== null ? (
+                      {item.status === 'Completed' && item.overallScore !== null && item.overallScore !== undefined ? (
                         <strong className="text-primary fw-bold">{item.overallScore}%</strong>
                       ) : (
-                        <span className="text-muted">N/A</span>
+                        <strong className="text-muted fw-bold">0%</strong>
                       )}
                     </td>
                     <td>
-                      <span className={`badge rounded-pill px-2.5 py-1 ${item.status === 'Completed' ? 'bg-success text-success bg-opacity-10' : item.status === 'InProgress' ? 'bg-primary text-primary bg-opacity-10' : 'bg-info text-info bg-opacity-10'}`}>
-                        {item.status === 'Completed' ? 'Graded' : item.status === 'InProgress' ? 'In Progress' : 'Evaluating'}
+                      <span className={`badge rounded-pill px-2.5 py-1 ${item.status === 'Completed' ? 'bg-success text-success bg-opacity-10' : ['Submitted', 'AwaitingEvaluation', 'Evaluating'].includes(item.status) ? 'bg-info text-info bg-opacity-10' : 'bg-danger text-danger bg-opacity-10'}`}>
+                        {item.status === 'Completed' ? 'Graded' : ['Submitted', 'AwaitingEvaluation', 'Evaluating'].includes(item.status) ? 'Evaluating' : 'Terminated in between'}
                       </span>
                     </td>
                     <td className="text-end">
@@ -366,7 +366,9 @@ const InterviewHistory = () => {
                               <FiDownload />
                             </button>
                           </>
-                        ) : (
+                        ) : ['Submitted', 'AwaitingEvaluation', 'Evaluating'].includes(item.status) ? (
+                          <span className="text-muted small px-2 fw-semibold" style={{ fontSize: '0.74rem' }}>Evaluating...</span>
+                        ) : (item.canResume !== false && (item.resumedTerminatedCount || 0) < 1) ? (
                           <button
                             onClick={() => {
                               if (item.interviewMode === 'Voice') {
@@ -377,12 +379,16 @@ const InterviewHistory = () => {
                                 navigate(`/interview/${item.interviewId}/active`);
                               }
                             }}
-                            className="btn btn-sm btn-success text-white px-2.5 py-1 fw-bold rounded-3"
+                            className="btn btn-sm btn-success text-white px-2.5 py-1 fw-bold rounded-2"
                             style={{ fontSize: '0.74rem' }}
-                            title="Resume Interview"
+                            title="Resume interview (1-time resume available)"
                           >
                             Resume
                           </button>
+                        ) : (
+                          <span className="badge bg-secondary bg-opacity-10 text-secondary px-2 py-1" style={{ fontSize: '0.72rem' }} title="Terminated interview can only be resumed once">
+                            Resume limit reached
+                          </span>
                         )}
                         <button
                           onClick={() => handleRetake(item.interviewId)}

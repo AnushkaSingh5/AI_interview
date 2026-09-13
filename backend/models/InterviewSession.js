@@ -122,6 +122,10 @@ const InterviewSessionSchema = new mongoose.Schema({
   timeRemaining: {
     type: Number
   },
+  resumedTerminatedCount: {
+    type: Number,
+    default: 0
+  },
   completedAt: {
     type: Date
   }

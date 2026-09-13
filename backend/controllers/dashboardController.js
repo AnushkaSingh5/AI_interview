@@ -218,16 +218,21 @@ exports.getInterviewHistory = async (req, res, next) => {
       const isCompleted = s.status === 'Completed' || 
                           (matchedVoice && matchedVoice.status === 'Completed') || 
                           (matchedVideo && matchedVideo.status === 'Completed');
-      const isTerminated = s.status === 'Terminated' ||
-                           (matchedVoice && matchedVoice.status === 'Terminated') ||
-                           (matchedVideo && matchedVideo.status === 'Terminated');
+      const isEvaluating = ['Submitted', 'AwaitingEvaluation', 'Evaluating', 'ReportGenerated'].includes(s.status);
+
       const score = matchedEval ? matchedEval.overallScore : 
                     (matchedVoice ? matchedVoice.overallScore : 
-                    (matchedVideo ? matchedVideo.overallScore : null));
+                    (matchedVideo ? matchedVideo.overallScore : (s.overallScore || 0)));
 
-      const finalStatus = isCompleted ? 'Completed' : (isTerminated ? 'Terminated' : s.status);
+      // If completed -> 'Completed' (Graded)
+      // Else if evaluating -> 'Evaluating'
+      // Else -> 'Terminated' ("Terminated in between" for all unfinished sessions across all modes)
+      const finalStatus = isCompleted ? 'Completed' : (isEvaluating ? 'Evaluating' : 'Terminated');
 
-      console.log(`[History] Interview type: ${s.interviewMode || 'Text'}, Status: ${finalStatus}, MongoDB _id: ${s._id}, Custom sessionId: ${s.interviewId}`);
+      const resumeCount = s.resumedTerminatedCount || (matchedVoice ? matchedVoice.resumedTerminatedCount : 0) || (matchedVideo ? matchedVideo.resumedTerminatedCount : 0) || 0;
+      const canResume = !isCompleted && !isEvaluating && resumeCount < 1;
+
+      console.log(`[History] Mode: ${s.interviewMode || 'Text'}, Status: ${finalStatus}, ResumedCount: ${resumeCount}, CanResume: ${canResume}, Code: ${s.interviewId}`);
 
       return {
         _id: s._id,
@@ -241,7 +246,9 @@ exports.getInterviewHistory = async (req, res, next) => {
         questionCount: s.questionCount,
         status: finalStatus,
         completedAt: s.completedAt || (matchedVoice ? matchedVoice.completedAt : null) || (matchedVideo ? matchedVideo.completedAt : null) || s.submittedAt || s.updatedAt,
-        overallScore: score
+        overallScore: isCompleted ? (score !== null && score !== undefined ? score : 0) : 0,
+        resumedTerminatedCount: resumeCount,
+        canResume: canResume
       };
     });
 
