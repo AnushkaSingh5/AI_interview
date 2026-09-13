@@ -8,6 +8,8 @@ import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 import { motion, AnimatePresence } from 'framer-motion';
 import avatarImg from '../assets/avatar.png';
+import AIAvatarInterviewer from '../components/AIAvatarInterviewer';
+import TypewriterQuestion from '../components/TypewriterQuestion';
 import { FilesetResolver, FaceLandmarker, ObjectDetector } from '@mediapipe/tasks-vision';
 
 const VideoSessionView = () => {
@@ -1741,6 +1743,12 @@ const VideoSessionView = () => {
     }
     stopUserRecording(true);
     if (currentIndex < questions.length - 1) {
+      setIsSpeakingQuestion(true);
+      isSpeakingRef.current = true;
+      setRecordingTimeSec(0);
+      setTimeLeftSec(90);
+      setLiveTranscript('');
+      setEditedTranscript('');
       setCurrentIndex(prev => prev + 1);
     } else {
       handleSubmitInterview();
@@ -1760,28 +1768,24 @@ const VideoSessionView = () => {
     }
     stopUserRecording(true);
     if (currentIndex > 0) {
+      setIsSpeakingQuestion(true);
+      isSpeakingRef.current = true;
+      setRecordingTimeSec(0);
+      setTimeLeftSec(90);
+      setLiveTranscript('');
+      setEditedTranscript('');
       setCurrentIndex(prev => prev - 1);
     }
   };
 
-  // Speak question automatically on question index navigation change
+  // Ensure speech synthesis is cancelled on unmount
   useEffect(() => {
-    if (questions.length > 0 && interviewState === 'INTERVIEW_ACTIVE' && !isSubmittingRef.current) {
-      if (speakTimeoutRef.current) {
-        clearTimeout(speakTimeoutRef.current);
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
       }
-      speakTimeoutRef.current = setTimeout(() => {
-        if (!isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
-          speakCurrentQuestion();
-        }
-      }, 400);
-      return () => {
-        if (speakTimeoutRef.current) {
-          clearTimeout(speakTimeoutRef.current);
-        }
-      };
-    }
-  }, [currentIndex, questions.length, interviewState]);
+    };
+  }, []);
 
   const cleanupMedia = () => {
     if ('speechSynthesis' in window) {
@@ -2245,10 +2249,10 @@ const VideoSessionView = () => {
 
       {/* Top Header Bar with Indicators and Terminate Button */}
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
-          <span className="text-danger animate-pulse">● REC</span>
-          <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
-          <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+        <div className="d-flex align-items-center gap-2 bg-dark px-3 py-1.5 rounded-pill border border-secondary border-opacity-40 shadow-sm" style={{ width: 'fit-content', fontSize: '0.75rem', backgroundColor: '#111827' }}>
+          <span className="text-danger fw-bold d-flex align-items-center gap-1"><span className="rounded-circle bg-danger animate-pulse" style={{ width: '6px', height: '6px' }} /> REC</span>
+          <span className="text-white-50 border-start border-secondary border-opacity-40 ps-2">🔒 Interview Locked</span>
+          <span className="text-success fw-semibold border-start border-secondary border-opacity-40 ps-2 d-flex align-items-center gap-1"><span className="rounded-circle bg-success" style={{ width: '6px', height: '6px' }} /> Fullscreen Active</span>
         </div>
         <button
           onClick={handleTerminateInterview}
@@ -2298,40 +2302,31 @@ const VideoSessionView = () => {
         {/* Split Screen Grid */}
         <div className="row g-0 flex-md-row flex-column align-items-stretch" style={{ height: '440px', minHeight: '440px' }}>
           
-          {/* Left Half: AI Interviewer */}
+          {/* Left Half: AI Interviewer Avatar */}
           <div className="col-md-6 border-end border-secondary position-relative bg-dark d-flex flex-column align-items-stretch animate-fade-in" style={{ height: '100%', minHeight: '440px' }}>
-            <img 
-              src={avatarImg} 
-              alt="AI Interviewer" 
-              className="w-100 h-100 object-fit-cover"
-              style={{ filter: isSpeakingQuestion ? 'brightness(1.05) contrast(1.02)' : 'brightness(0.95)' }}
+            <AIAvatarInterviewer
+              questionText={currentQuestion.questionText || currentQuestion.question || ''}
+              questionNumber={currentIndex + 1}
+              totalQuestions={questions.length}
+              isRecording={isRecording}
+              isEvaluating={submitting}
+              onSpeechStart={() => {
+                setIsSpeakingQuestion(true);
+                isSpeakingRef.current = true;
+                stopUserRecording(false);
+              }}
+              onSpeechEnd={() => {
+                setIsSpeakingQuestion(false);
+                isSpeakingRef.current = false;
+                if (!isSubmittingRef.current && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+                  startUserRecording();
+                }
+              }}
+              mode="video"
+              showControls={true}
+              showSubtitles={false}
+              style={{ borderRadius: '0px' }}
             />
-            
-            {/* Pulsing overlay frame when AI is speaking */}
-            {isSpeakingQuestion && (
-              <div 
-                className="position-absolute top-0 start-0 end-0 bottom-0 pointer-events-none z-2"
-                style={{ 
-                  border: '4px solid var(--primary-purple)', 
-                  boxShadow: 'inset 0 0 20px rgba(124, 58, 237, 0.4)',
-                  pointerEvents: 'none'
-                }}
-              />
-            )}
-
-            {/* AI Avatar metadata labels */}
-            <div className="bg-dark bg-opacity-75 border border-secondary px-2.5 py-1 rounded text-white small" style={{ position: 'absolute', bottom: '12px', left: '12px', zIndex: 10, fontSize: '0.74rem' }}>
-              🤖 AI Interviewer (Virtual Human)
-            </div>
-
-            {/* AI speaking active state waves */}
-            {isSpeakingQuestion && (
-              <div className="d-flex align-items-end gap-1" style={{ position: 'absolute', bottom: '12px', right: '12px', zIndex: 10, height: '20px' }}>
-                <span className="bg-primary animate-audio-bar-1" style={{ width: '3px', height: '100%', backgroundColor: 'var(--primary-purple)' }} />
-                <span className="bg-primary animate-audio-bar-2" style={{ width: '3px', height: '80%', backgroundColor: 'var(--primary-purple)' }} />
-                <span className="bg-primary animate-audio-bar-3" style={{ width: '3px', height: '60%', backgroundColor: 'var(--primary-purple)' }} />
-              </div>
-            )}
           </div>
 
           {/* Right Half: Candidate Webcam Feed */}
@@ -2370,7 +2365,7 @@ const VideoSessionView = () => {
             {/* Posture alerts / facial cues overlays */}
             {postureWarning && (
               <div 
-                className="bg-danger bg-opacity-90 text-white p-2 rounded-3 text-start small border border-danger d-flex align-items-center gap-2 shadow"
+                className="bg-danger bg-opacity-90 text-white p-2 rounded-3 text-start small border border-danger d-flex align-items-center gap-2 shadow" 
                 style={{ position: 'absolute', top: prohibitedObjectAlert.active ? '70px' : '12px', left: '12px', right: '12px', zIndex: 20 }}
               >
                 <FiAlertCircle className="fs-5 flex-shrink-0" />
@@ -2482,10 +2477,13 @@ const VideoSessionView = () => {
             </div>
           </div>
 
-          {/* Question Text */}
-          <p className="text-white fw-bold mb-2 mt-1" style={{ fontSize: '1.04rem', lineHeight: '1.45' }}>
-            {currentQuestion?.questionText}
-          </p>
+          {/* Question Text with progressive Typewriter effect while AI speaks */}
+          <div className="text-white fw-bold mb-2 mt-1" style={{ fontSize: '1.04rem', lineHeight: '1.45' }}>
+            <TypewriterQuestion
+              text={currentQuestion?.questionText || currentQuestion?.question || ''}
+              isSpeaking={isSpeakingQuestion}
+            />
+          </div>
 
           {/* Live speech transcription subtitle preview */}
           {isRecording && liveTranscript && (
@@ -2523,10 +2521,10 @@ const VideoSessionView = () => {
           {/* Navigation Controls */}
           <button
             onClick={handlePreviousQuestion}
-            disabled={currentIndex === 0 || submitting}
+            disabled={currentIndex === 0 || submitting || isSpeakingQuestion}
             className="btn btn-outline-light border-secondary rounded-circle p-2.5 d-flex align-items-center justify-content-center"
-            style={{ width: '40px', height: '40px' }}
-            title="Previous Question"
+            style={{ width: '40px', height: '40px', opacity: (currentIndex === 0 || submitting || isSpeakingQuestion) ? 0.35 : 1 }}
+            title={isSpeakingQuestion ? "Navigation locked while AI speaks" : "Previous Question"}
           >
             ←
           </button>
@@ -2534,16 +2532,20 @@ const VideoSessionView = () => {
           {currentIndex < questions.length - 1 ? (
             <button
               onClick={handleNextQuestion}
-              disabled={submitting}
+              disabled={submitting || isSpeakingQuestion}
               className="btn btn-primary-purple px-4 py-2 rounded-pill fw-bold"
+              style={{ opacity: (submitting || isSpeakingQuestion) ? 0.5 : 1, cursor: isSpeakingQuestion ? 'not-allowed' : 'pointer' }}
+              title={isSpeakingQuestion ? "Please wait for AI to finish speaking or click 'Start Answering Now'" : "Next Question"}
             >
               Next Question <FiArrowRight className="ms-1" />
             </button>
           ) : (
             <button
               onClick={handleSubmitInterview}
-              disabled={submitting}
+              disabled={submitting || isSpeakingQuestion}
               className="btn btn-success px-4 py-2 rounded-pill fw-bold text-white d-flex align-items-center gap-1.5"
+              style={{ opacity: (submitting || isSpeakingQuestion) ? 0.5 : 1, cursor: isSpeakingQuestion ? 'not-allowed' : 'pointer' }}
+              title={isSpeakingQuestion ? "Please wait for AI to finish speaking or click 'Start Answering Now'" : "Submit Interview"}
             >
               {submitting ? (
                 <>

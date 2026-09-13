@@ -7,6 +7,8 @@ import {
 } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
+import AIAvatarInterviewer from '../components/AIAvatarInterviewer';
+import TypewriterQuestion from '../components/TypewriterQuestion';
 
 const VoiceSessionView = () => {
   const { id } = useParams();
@@ -277,54 +279,13 @@ const VoiceSessionView = () => {
 
   const currentQ = questions[currentIndex];
 
-  // Helper to read question aloud using Web SpeechSynthesis API
-  const speakQuestion = (text) => {
-    if (!('speechSynthesis' in window) || !text) return;
-
-    window.speechSynthesis.cancel(); // Stop any ongoing speech
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95; // Steady, professional interviewer pace
-    utterance.pitch = 1.0;
-    utterance.lang = 'en-US';
-
-    const voices = window.speechSynthesis.getVoices();
-    const englishVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('Samantha') || v.name.includes('David') || v.name.includes('Zira') || v.name.includes('English'))) || voices.find(v => v.lang.startsWith('en'));
-
-    if (englishVoice) {
-      utterance.voice = englishVoice;
+  const handleStartAnsweringNow = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
     }
-
-    utterance.onstart = () => {
-      setIsSpeakingQuestion(true);
-      console.log('[Voice TTS] AI Interviewer reading question aloud...');
-    };
-
-    utterance.onend = () => {
-      setIsSpeakingQuestion(false);
-      console.log('[Voice TTS] Finished reading question.');
-    };
-
-    utterance.onerror = (e) => {
-      setIsSpeakingQuestion(false);
-      console.warn('[Voice TTS] Speech synthesis error:', e);
-    };
-
-    window.speechSynthesis.speak(utterance);
+    setIsSpeakingQuestion(false);
+    startRecording();
   };
-
-  // Trigger AI voice to read question when question text changes
-  useEffect(() => {
-    if (currentQ?.questionText) {
-      speakQuestion(currentQ.questionText);
-    }
-
-    return () => {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    };
-  }, [currentIndex, currentQ?.questionText]);
 
   // Initialize SpeechRecognition instance once
   useEffect(() => {
@@ -657,12 +618,17 @@ const VoiceSessionView = () => {
 
       {/* Top Header Bar with Indicators and Terminate Button */}
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
-          <span className={`${isRecording ? 'text-danger animate-pulse' : 'text-muted'}`}>● {isRecording ? 'REC' : 'STANDBY'}</span>
-          <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
-          <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+        <div className="d-flex align-items-center gap-2 bg-dark px-3 py-1.5 rounded-pill border border-secondary border-opacity-40 shadow-sm" style={{ width: 'fit-content', fontSize: '0.75rem', backgroundColor: '#111827' }}>
+          <span className={`${isRecording ? 'text-danger fw-bold d-flex align-items-center gap-1' : 'text-muted d-flex align-items-center gap-1'}`}>
+            <span className={`rounded-circle ${isRecording ? 'bg-danger animate-pulse' : 'bg-secondary'}`} style={{ width: '6px', height: '6px' }} />
+            {isRecording ? 'REC' : 'STANDBY'}
+          </span>
+          <span className="text-white-50 border-start border-secondary border-opacity-40 ps-2">🔒 Interview Locked</span>
+          <span className="text-success fw-semibold border-start border-secondary border-opacity-40 ps-2 d-flex align-items-center gap-1">
+            <span className="rounded-circle bg-success" style={{ width: '6px', height: '6px' }} /> Fullscreen Active
+          </span>
           {tabSwitchStrikes > 0 && (
-            <span className="text-warning border-start border-secondary ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
+            <span className="text-warning fw-semibold border-start border-secondary border-opacity-40 ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
           )}
         </div>
         <button
@@ -688,88 +654,108 @@ const VoiceSessionView = () => {
         </div>
       </div>
 
-      {/* AI Question Card with Audio Voice TTS Indicator */}
-      <div className="glass-panel p-4 bg-white border shadow-sm mb-4">
-        <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-          <div className="d-flex align-items-center gap-2">
-            <span className="badge bg-info bg-opacity-10 text-info fw-semibold">{currentQ.topic || 'General'}</span>
-            <span className="badge bg-secondary bg-opacity-10 text-secondary">{session?.difficulty}</span>
-            {isSpeakingQuestion && (
-              <span className="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 d-flex align-items-center gap-1.5 animate-pulse py-1 px-2.5">
-                <FiVolume2 className="fs-6" /> AI Asking Question...
-              </span>
-            )}
-          </div>
-
-          <button
-            onClick={() => {
-              if (isSpeakingQuestion) {
-                window.speechSynthesis.cancel();
-                setIsSpeakingQuestion(false);
-              } else {
-                speakQuestion(currentQ.questionText);
+      {/* Main Studio Row with Avatar & Answering Console */}
+      <div className="row g-4 mb-4">
+        {/* Left: Animated AI Interviewer Avatar Stage */}
+        <div className="col-lg-5">
+          <AIAvatarInterviewer
+            questionText={currentQ?.questionText || ''}
+            questionNumber={currentIndex + 1}
+            totalQuestions={questions.length}
+            isRecording={isRecording}
+            isEvaluating={submitting}
+            onSpeechStart={() => {
+              setIsSpeakingQuestion(true);
+            }}
+            onSpeechEnd={() => {
+              setIsSpeakingQuestion(false);
+              if (!isRecording && interviewStateRef.current === 'INTERVIEW_ACTIVE') {
+                startRecording();
               }
             }}
-            className="btn btn-sm btn-outline-primary rounded-pill d-flex align-items-center gap-1.5 py-1 px-3"
-            title={isSpeakingQuestion ? "Stop AI Voice" : "Replay AI Question Voice"}
-          >
-            {isSpeakingQuestion ? <FiVolumeX /> : <FiVolume2 />}
-            <span style={{ fontSize: '0.78rem' }}>{isSpeakingQuestion ? 'Stop Voice' : 'Listen Again'}</span>
-          </button>
+            mode="voice"
+            showControls={true}
+            showSubtitles={true}
+            style={{ minHeight: '440px' }}
+          />
         </div>
 
-        <h3 className="h5 fw-bold text-dark mb-2" style={{ lineHeight: '1.5' }}>{currentQ.questionText}</h3>
-        <p className="text-muted small mb-0">The AI interviewer is asking the question aloud. Click Start Recording when you are ready to answer.</p>
-      </div>
+        {/* Right: Question details & Voice Controls Bar */}
+        <div className="col-lg-7 d-flex flex-column gap-3">
+          {/* Question Card */}
+          <div className="glass-panel p-4 bg-white border shadow-sm">
+            <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <div className="d-flex align-items-center gap-2">
+                <span className="badge bg-info bg-opacity-10 text-info fw-semibold">{currentQ?.topic || 'General'}</span>
+                <span className="badge bg-secondary bg-opacity-10 text-secondary">{session?.difficulty}</span>
+              </div>
+            </div>
 
-      {/* Voice Controls Bar */}
-      <div className="glass-panel p-4 bg-white border shadow-sm mb-4">
-        <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
-          <div className="d-flex align-items-center gap-2">
-            {!isRecording ? (
-              <button onClick={startRecording} className="btn btn-danger py-2 px-4 d-flex align-items-center gap-2 rounded-pill shadow-sm">
-                <FiMic className="fs-5" /> Start Recording
-              </button>
-            ) : (
-              <>
-                {!isPaused ? (
-                  <button onClick={pauseRecording} className="btn btn-warning py-2 px-3 d-flex align-items-center gap-2">
-                    <FiPause /> Pause
+            <div className="h5 fw-bold text-dark mb-2" style={{ lineHeight: '1.5' }}>
+              <TypewriterQuestion
+                text={currentQ?.questionText || ''}
+                isSpeaking={isSpeakingQuestion}
+              />
+            </div>
+            <p className="text-muted small mb-0">
+              {isSpeakingQuestion ? '🎙️ AI interviewer is asking the question. Listen closely or click "Start Answering Now" below.' : 'Click Start Recording or Speak into your mic when you are ready to answer.'}
+            </p>
+          </div>
+
+          {/* Voice Recording Controls */}
+          <div className="glass-panel p-4 bg-white border shadow-sm">
+            <div className="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3">
+              <div className="d-flex align-items-center gap-2">
+                {isSpeakingQuestion ? (
+                  <button onClick={handleStartAnsweringNow} className="btn btn-info text-white py-2 px-4 d-flex align-items-center gap-2 rounded-pill shadow-sm fw-bold">
+                    <FiMic className="fs-5" /> Start Answering Now
+                  </button>
+                ) : !isRecording ? (
+                  <button onClick={startRecording} className="btn btn-danger py-2 px-4 d-flex align-items-center gap-2 rounded-pill shadow-sm">
+                    <FiMic className="fs-5" /> Start Recording
                   </button>
                 ) : (
-                  <button onClick={resumeRecording} className="btn btn-success py-2 px-3 d-flex align-items-center gap-2">
-                    <FiPlay /> Resume
-                  </button>
+                  <>
+                    {!isPaused ? (
+                      <button onClick={pauseRecording} className="btn btn-warning py-2 px-3 d-flex align-items-center gap-2">
+                        <FiPause /> Pause
+                      </button>
+                    ) : (
+                      <button onClick={resumeRecording} className="btn btn-success py-2 px-3 d-flex align-items-center gap-2">
+                        <FiPlay /> Resume
+                      </button>
+                    )}
+                    <button onClick={stopRecording} className="btn btn-outline-danger py-2 px-3 d-flex align-items-center gap-2">
+                      <FiSquare /> Stop
+                    </button>
+                  </>
                 )}
-                <button onClick={stopRecording} className="btn btn-outline-danger py-2 px-3 d-flex align-items-center gap-2">
-                  <FiSquare /> Stop
-                </button>
-              </>
-            )}
-          </div>
+              </div>
 
-          <div className="d-flex align-items-center gap-3">
-            <span className="badge bg-dark bg-opacity-10 text-dark font-monospace py-2 px-3" style={{ fontSize: '0.9rem' }}>
-              ⏱️ {Math.floor(recordingTimeSec / 60)}:{(recordingTimeSec % 60).toString().padStart(2, '0')} / 3:00
-            </span>
-            {isRecording && !isPaused && (
-              <span className="badge bg-danger text-white py-2 px-3 d-flex align-items-center gap-1.5 animate-pulse">
-                <span className="rounded-circle bg-white" style={{ width: '8px', height: '8px' }} /> Recording...
-              </span>
-            )}
-          </div>
-        </div>
+              <div className="d-flex align-items-center gap-3">
+                <span className="badge bg-dark bg-opacity-10 text-dark font-monospace py-2 px-3" style={{ fontSize: '0.9rem' }}>
+                  ⏱️ {Math.floor(recordingTimeSec / 60)}:{(recordingTimeSec % 60).toString().padStart(2, '0')} / 3:00
+                </span>
+                {isRecording && !isPaused && (
+                  <span className="badge bg-danger text-white py-2 px-3 d-flex align-items-center gap-1.5 animate-pulse">
+                    <span className="rounded-circle bg-white" style={{ width: '8px', height: '8px' }} /> Recording...
+                  </span>
+                )}
+              </div>
+            </div>
 
-        {/* Live Vocal Metrics Banner */}
-        <div className="row g-2 pt-2 border-top text-muted small">
-          <div className="col-4 text-center border-end">
-            <span>Words Spoken: <strong>{currentWordCount}</strong></span>
-          </div>
-          <div className="col-4 text-center border-end">
-            <span>Estimated Speed: <strong>{estimatedWpm} WPM</strong></span>
-          </div>
-          <div className="col-4 text-center">
-            <span>Filler Words: <strong className={fillerCount > 3 ? 'text-danger' : 'text-success'}>{fillerCount}</strong></span>
+            {/* Live Vocal Metrics Banner */}
+            <div className="row g-2 pt-2 border-top text-muted small">
+              <div className="col-4 text-center border-end">
+                <span>Words Spoken: <strong>{currentWordCount}</strong></span>
+              </div>
+              <div className="col-4 text-center border-end">
+                <span>Estimated Speed: <strong>{estimatedWpm} WPM</strong></span>
+              </div>
+              <div className="col-4 text-center">
+                <span>Filler Words: <strong className={fillerCount > 3 ? 'text-danger' : 'text-success'}>{fillerCount}</strong></span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -790,17 +776,24 @@ const VoiceSessionView = () => {
 
         <div className="d-flex justify-content-between align-items-center">
           <button
-            disabled={currentIndex === 0}
-            onClick={() => { setCurrentIndex(prev => prev - 1); stopRecording(); }}
+            disabled={currentIndex === 0 || isSpeakingQuestion || submitting}
+            onClick={() => {
+              setIsSpeakingQuestion(true);
+              setCurrentIndex(prev => prev - 1);
+              stopRecording();
+            }}
             className="btn btn-sm btn-outline-secondary"
+            style={{ opacity: (currentIndex === 0 || isSpeakingQuestion || submitting) ? 0.4 : 1 }}
           >
             Previous Question
           </button>
 
           <button
             onClick={handleSubmitAnswer}
-            disabled={submitting || !editedTranscript.trim()}
+            disabled={submitting || isSpeakingQuestion || !editedTranscript.trim()}
             className="btn btn-primary-purple text-white py-2 px-4 shadow-sm"
+            style={{ opacity: (submitting || isSpeakingQuestion || !editedTranscript.trim()) ? 0.5 : 1, cursor: isSpeakingQuestion ? 'not-allowed' : 'pointer' }}
+            title={isSpeakingQuestion ? "Please wait for AI to finish asking the question or click 'Start Answering Now'" : ""}
           >
             {submitting ? 'Evaluating Verbal Answer...' : currentIndex < questions.length - 1 ? 'Submit & Next Question' : 'Submit & Finish Voice Interview'}
           </button>

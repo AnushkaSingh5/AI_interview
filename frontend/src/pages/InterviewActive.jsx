@@ -8,6 +8,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
+import AIAvatarInterviewer from '../components/AIAvatarInterviewer';
+import TypewriterQuestion from '../components/TypewriterQuestion';
 
 const InterviewActive = () => {
   const { id } = useParams();
@@ -21,10 +23,12 @@ const InterviewActive = () => {
   // Current active question index (0-indexed locally)
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answersMap, setAnswersMap] = useState({}); // questionId -> { answer, skipped, timeTaken }
+  const [isSpeakingQuestion, setIsSpeakingQuestion] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showAvatar, setShowAvatar] = useState(true);
 
   // Strict Lockdown & Proctoring states
   const [interviewState, setInterviewState] = useState(document.fullscreenElement ? 'INTERVIEW_ACTIVE' : 'INTERVIEW_PAUSED');
@@ -519,12 +523,12 @@ const InterviewActive = () => {
 
         {/* Top Header Bar with Indicators and Terminate Button */}
         <div className="d-flex justify-content-between align-items-center mb-3">
-          <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
-            <span className="text-danger animate-pulse">● LIVE</span>
-            <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
-            <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+          <div className="d-flex align-items-center gap-2 bg-dark px-3 py-1.5 rounded-pill border border-secondary border-opacity-40 shadow-sm" style={{ width: 'fit-content', fontSize: '0.75rem', backgroundColor: '#111827' }}>
+            <span className="text-danger fw-bold d-flex align-items-center gap-1"><span className="rounded-circle bg-danger animate-pulse" style={{ width: '6px', height: '6px' }} /> LIVE</span>
+            <span className="text-white-50 border-start border-secondary border-opacity-40 ps-2">🔒 Interview Locked</span>
+            <span className="text-success fw-semibold border-start border-secondary border-opacity-40 ps-2 d-flex align-items-center gap-1"><span className="rounded-circle bg-success" style={{ width: '6px', height: '6px' }} /> Fullscreen Active</span>
             {tabSwitchStrikes > 0 && (
-              <span className="text-warning border-start border-secondary ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
+              <span className="text-warning fw-semibold border-start border-secondary border-opacity-40 ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
             )}
           </div>
           <button
@@ -666,12 +670,12 @@ const InterviewActive = () => {
 
       {/* Top Header Bar with Indicators and Terminate Button */}
       <div className="d-flex justify-content-between align-items-center mb-3">
-        <div className="d-flex align-items-center gap-2 bg-dark bg-opacity-75 px-3 py-1.5 rounded-3 border border-secondary" style={{ width: 'fit-content', fontSize: '0.72rem' }}>
-          <span className="text-danger animate-pulse">● LIVE</span>
-          <span className="text-white-50 border-start border-secondary ps-2">🔒 Interview Locked</span>
-          <span className="text-success border-start border-secondary ps-2">🖥 Fullscreen Active</span>
+        <div className="d-flex align-items-center gap-2 bg-dark px-3 py-1.5 rounded-pill border border-secondary border-opacity-40 shadow-sm" style={{ width: 'fit-content', fontSize: '0.75rem', backgroundColor: '#111827' }}>
+          <span className="text-danger fw-bold d-flex align-items-center gap-1"><span className="rounded-circle bg-danger animate-pulse" style={{ width: '6px', height: '6px' }} /> LIVE</span>
+          <span className="text-white-50 border-start border-secondary border-opacity-40 ps-2">🔒 Interview Locked</span>
+          <span className="text-success fw-semibold border-start border-secondary border-opacity-40 ps-2 d-flex align-items-center gap-1"><span className="rounded-circle bg-success" style={{ width: '6px', height: '6px' }} /> Fullscreen Active</span>
           {tabSwitchStrikes > 0 && (
-            <span className="text-warning border-start border-secondary ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
+            <span className="text-warning fw-semibold border-start border-secondary border-opacity-40 ps-2">⚠️ Strikes: {tabSwitchStrikes}/3</span>
           )}
         </div>
         <button
@@ -766,9 +770,20 @@ const InterviewActive = () => {
             <div>
               {/* Question metadata indicators */}
               <div className="d-flex justify-content-between align-items-center border-bottom pb-2 mb-3">
-                <span className="text-muted small fw-semibold">
-                  Question {currentIndex + 1} of {questions.length}
-                </span>
+                <div className="d-flex align-items-center gap-2">
+                  <span className="text-muted small fw-semibold">
+                    Question {currentIndex + 1} of {questions.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowAvatar(!showAvatar)}
+                    className={`btn btn-sm py-0.5 px-2 rounded-pill ${showAvatar ? 'btn-primary-purple text-white' : 'btn-outline-secondary'}`}
+                    style={{ fontSize: '0.68rem' }}
+                    title="Toggle AI Interviewer Avatar"
+                  >
+                    🤖 {showAvatar ? 'Hide Avatar' : 'Show AI Avatar'}
+                  </button>
+                </div>
                 <div className="d-flex gap-1.5" style={{ fontSize: '0.7rem' }}>
                   <span className="badge bg-primary bg-opacity-10 text-primary capitalize px-2.5 py-1">
                     {activeQuestion.questionType}
@@ -782,11 +797,31 @@ const InterviewActive = () => {
                 </div>
               </div>
 
+              {/* Animated AI Interviewer Avatar Companion */}
+              {showAvatar && (
+                <div className="mb-3">
+                  <AIAvatarInterviewer
+                    questionText={activeQuestion.question || ''}
+                    questionNumber={currentIndex + 1}
+                    totalQuestions={questions.length}
+                    mode="compact"
+                    showControls={true}
+                    showSubtitles={true}
+                    onSpeechStart={() => setIsSpeakingQuestion(true)}
+                    onSpeechEnd={() => setIsSpeakingQuestion(false)}
+                    style={{ minHeight: '300px', maxHeight: '340px' }}
+                  />
+                </div>
+              )}
+
               {/* Question card text */}
               <div className="mb-3">
-                <h4 className="fw-bold text-dark mb-3" style={{ fontSize: '1rem', lineHeight: '1.5' }}>
-                  {activeQuestion.question}
-                </h4>
+                <div className="fw-bold text-dark mb-3" style={{ fontSize: '1rem', lineHeight: '1.5' }}>
+                  <TypewriterQuestion
+                    text={activeQuestion.question || ''}
+                    isSpeaking={isSpeakingQuestion}
+                  />
+                </div>
               </div>
 
               {/* Answer input area */}
@@ -808,16 +843,22 @@ const InterviewActive = () => {
               <div className="d-flex gap-2">
                 <button 
                   type="button" 
-                  disabled={currentIndex === 0}
-                  onClick={handlePrev}
+                  disabled={currentIndex === 0 || isSpeakingQuestion}
+                  onClick={() => {
+                    setIsSpeakingQuestion(true);
+                    handlePrev();
+                  }}
                   className="btn btn-sm btn-white-custom py-2 px-3 d-flex align-items-center gap-1"
+                  style={{ opacity: (currentIndex === 0 || isSpeakingQuestion) ? 0.4 : 1 }}
                 >
                   <FiChevronLeft /> Previous
                 </button>
                 <button 
                   type="button" 
+                  disabled={isSpeakingQuestion}
                   onClick={handleSkipQuestion}
                   className="btn btn-sm btn-outline-danger py-2 px-3 d-flex align-items-center gap-1 border border-danger-subtle text-danger bg-transparent"
+                  style={{ opacity: isSpeakingQuestion ? 0.4 : 1 }}
                 >
                   Skip
                 </button>
@@ -827,15 +868,22 @@ const InterviewActive = () => {
                 <button 
                   type="button" 
                   onClick={handleSaveManualDraft}
-                  disabled={savingDraft}
+                  disabled={savingDraft || isSpeakingQuestion}
                   className="btn btn-sm btn-white-custom py-2 px-3 d-flex align-items-center gap-1.5"
+                  style={{ opacity: (savingDraft || isSpeakingQuestion) ? 0.5 : 1 }}
                 >
                   <FiSave /> {savingDraft ? 'Saving...' : 'Save Draft'}
                 </button>
                 <button 
                   type="button" 
-                  onClick={handleNext}
+                  onClick={() => {
+                    setIsSpeakingQuestion(true);
+                    handleNext();
+                  }}
+                  disabled={isSpeakingQuestion}
                   className="btn btn-sm btn-primary-purple py-2 px-3.5 d-flex align-items-center gap-1"
+                  style={{ opacity: isSpeakingQuestion ? 0.5 : 1, cursor: isSpeakingQuestion ? 'not-allowed' : 'pointer' }}
+                  title={isSpeakingQuestion ? "Please wait for AI to finish speaking" : ""}
                 >
                   {currentIndex === questions.length - 1 ? 'Review Summary' : 'Next'} <FiChevronRight />
                 </button>
