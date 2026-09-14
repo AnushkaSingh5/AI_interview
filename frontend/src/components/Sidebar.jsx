@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiSliders, FiMic, FiCheckSquare, FiActivity, FiUser, FiFile, FiSettings, FiLogOut, FiCpu, FiCode } from 'react-icons/fi';
+import { FiSliders, FiMic, FiCheckSquare, FiActivity, FiUser, FiFile, FiSettings, FiLogOut, FiCpu, FiCode, FiLayers } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 
@@ -56,6 +56,12 @@ const Sidebar = () => {
             <NavLink to="/coding-interview/create" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiCode />
               <span>Coding Round</span>
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/system-design/create" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
+              <FiLayers />
+              <span>System Design</span>
             </NavLink>
           </li>
           <li>

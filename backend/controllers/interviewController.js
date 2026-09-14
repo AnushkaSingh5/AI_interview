@@ -212,6 +212,25 @@ exports.deleteInterviewSession = async (req, res, next) => {
         });
       }
 
+      const SystemDesignInterview = require('../models/SystemDesignInterview');
+      const sysDesignSession = await SystemDesignInterview.findOne({
+        $or: [
+          { sessionId: req.params.id },
+          { _id: mongoose.Types.ObjectId.isValid(req.params.id) ? req.params.id : null }
+        ]
+      });
+
+      if (sysDesignSession) {
+        if (sysDesignSession.user.toString() !== req.user._id.toString()) {
+          return res.status(403).json({ success: false, message: 'Access denied' });
+        }
+        await sysDesignSession.deleteOne();
+        return res.status(200).json({
+          success: true,
+          message: 'System design interview session deleted successfully'
+        });
+      }
+
       return res.status(404).json({ success: false, message: 'Interview session not found' });
     }
 

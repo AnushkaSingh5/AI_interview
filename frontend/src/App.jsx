@@ -41,6 +41,9 @@ import VideoReportView from './pages/VideoReportView';
 import CodingInterviewCreate from './pages/CodingInterviewCreate';
 import CodingInterviewSession from './pages/CodingInterviewSession';
 import CodingReportView from './pages/CodingReportView';
+import SystemDesignCreate from './pages/SystemDesignCreate';
+import SystemDesignSession from './pages/SystemDesignSession';
+import SystemDesignReport from './pages/SystemDesignReport';
 
 function App() {
   return (
@@ -66,8 +69,9 @@ function App() {
 
           {/* Protected Pages Layout Shell */}
           <Route element={<ProtectedRoute />}>
-            {/* Standalone Fullscreen Live Coding Technical Session (No Sidebar / No HeaderBar) */}
+            {/* Standalone Fullscreen Live Coding & System Design Technical Sessions (No Sidebar / No HeaderBar) */}
             <Route path="/coding-interview/session/:id" element={<CodingInterviewSession />} />
+            <Route path="/system-design/session/:id" element={<SystemDesignSession />} />
 
             {/* Dashboard Layout Shell with Sidebar & HeaderBar */}
             <Route
@@ -106,6 +110,8 @@ function App() {
               <Route path="/video-interview/report/:id" element={<VideoReportView />} />
               <Route path="/coding-interview/create" element={<CodingInterviewCreate />} />
               <Route path="/coding-interview/report/:id" element={<CodingReportView />} />
+              <Route path="/system-design/create" element={<SystemDesignCreate />} />
+              <Route path="/system-design/report/:id" element={<SystemDesignReport />} />
             </Route>
           </Route>
 

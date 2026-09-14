@@ -4,6 +4,7 @@ const InterviewEvaluation = require('../models/InterviewEvaluation');
 const InterviewAnswer = require('../models/InterviewAnswer');
 const QuestionEvaluation = require('../models/QuestionEvaluation');
 const CodingInterview = require('../models/CodingInterview');
+const SystemDesignInterview = require('../models/SystemDesignInterview');
 
 // Helper to calculate streaks dynamically
 const calculateStreak = async (userId) => {
@@ -31,7 +32,12 @@ const calculateStreak = async (userId) => {
       status: 'Completed'
     }).select('completedAt updatedAt createdAt');
 
-    const allSessions = [...completedSessions, ...completedVideo, ...completedVoice, ...completedCoding];
+    const completedSystemDesign = await SystemDesignInterview.find({
+      user: userId,
+      status: 'Completed'
+    }).select('completedAt updatedAt createdAt');
+
+    const allSessions = [...completedSessions, ...completedVideo, ...completedVoice, ...completedCoding, ...completedSystemDesign];
 
     const validDates = allSessions
       .map(s => s.completedAt || s.updatedAt || s.createdAt)
@@ -122,8 +128,17 @@ exports.getDashboardSummary = async (req, res, next) => {
       status: 'Completed'
     });
 
+    const completedSystemDesign = await SystemDesignInterview.find({
+      user: userId,
+      status: 'Completed'
+    });
+
     const codingScores = completedCoding
       .map(c => c.overallScore)
+      .filter(s => s !== null && s !== undefined && !isNaN(s));
+
+    const systemDesignScores = completedSystemDesign
+      .map(s => s.overallScore)
       .filter(s => s !== null && s !== undefined && !isNaN(s));
 
     const totalAnswersCount = await InterviewAnswer.countDocuments({ user: userId });
@@ -145,18 +160,21 @@ exports.getDashboardSummary = async (req, res, next) => {
     const s = stats[0] || {};
     const evalCount = s.count || 0;
     const codingCount = codingScores.length;
-    const totalCompleted = evalCount + codingCount;
+    const sysDesignCount = systemDesignScores.length;
+    const totalCompleted = evalCount + codingCount + sysDesignCount;
 
     let overallAverage = 0;
     if (totalCompleted > 0) {
       const evalTotal = (s.avgScore || 0) * evalCount;
       const codingTotal = codingScores.reduce((acc, v) => acc + v, 0);
-      overallAverage = Math.round((evalTotal + codingTotal) / totalCompleted);
+      const sysDesignTotal = systemDesignScores.reduce((acc, v) => acc + v, 0);
+      overallAverage = Math.round((evalTotal + codingTotal + sysDesignTotal) / totalCompleted);
     }
 
     const allScores = [
       ...(s.maxScore !== undefined && evalCount > 0 ? [s.maxScore] : []),
-      ...codingScores
+      ...codingScores,
+      ...systemDesignScores
     ];
     const highestScore = allScores.length > 0 ? Math.max(...allScores) : (s.maxScore || 0);
     const lowestScore = allScores.length > 0 ? Math.min(...allScores) : (s.minScore || 0);
@@ -193,9 +211,11 @@ exports.getInterviewHistory = async (req, res, next) => {
 
     const query = { user: userId };
     const codingQuery = { user: userId };
+    const sysDesignQuery = { user: userId };
 
     const shouldIncludeCoding = !interviewType || interviewType === 'Coding' || interviewType === 'All';
-    const shouldIncludeRegular = !interviewType || interviewType !== 'Coding';
+    const shouldIncludeSysDesign = !interviewType || interviewType === 'System Design' || interviewType === 'SystemDesign' || interviewType === 'All';
+    const shouldIncludeRegular = !interviewType || (!['Coding', 'System Design', 'SystemDesign'].includes(interviewType));
 
     if (search) {
       query.$or = [
@@ -208,40 +228,53 @@ exports.getInterviewHistory = async (req, res, next) => {
         { title: { $regex: search, $options: 'i' } },
         { topic: { $regex: search, $options: 'i' } }
       ];
+      sysDesignQuery.$or = [
+        { role: { $regex: search, $options: 'i' } },
+        { title: { $regex: search, $options: 'i' } },
+        { domain: { $regex: search, $options: 'i' } }
+      ];
     }
     if (role) {
       query.role = { $regex: role, $options: 'i' };
       codingQuery.role = { $regex: role, $options: 'i' };
+      sysDesignQuery.role = { $regex: role, $options: 'i' };
     }
     if (company) query.company = { $regex: company, $options: 'i' };
     if (difficulty) {
       query.difficulty = difficulty;
       codingQuery.difficulty = difficulty;
+      sysDesignQuery.difficulty = difficulty;
     }
-    if (interviewType && interviewType !== 'Coding' && interviewType !== 'All') {
+    if (interviewType && !['Coding', 'System Design', 'SystemDesign', 'All'].includes(interviewType)) {
       query.interviewType = interviewType;
     }
     if (status) {
       query.status = status;
       if (status === 'Completed') {
         codingQuery.status = 'Completed';
+        sysDesignQuery.status = 'Completed';
       } else if (status === 'Terminated') {
         codingQuery.status = { $in: ['Terminated in between', 'In Progress'] };
+        sysDesignQuery.status = { $in: ['Terminated in between', 'In Progress'] };
       } else if (status === 'AwaitingEvaluation') {
         codingQuery.status = 'None_Match';
+        sysDesignQuery.status = 'None_Match';
       }
     }
 
     if (startDate || endDate) {
       query.createdAt = {};
       codingQuery.createdAt = {};
+      sysDesignQuery.createdAt = {};
       if (startDate) {
         query.createdAt.$gte = new Date(startDate);
         codingQuery.createdAt.$gte = new Date(startDate);
+        sysDesignQuery.createdAt.$gte = new Date(startDate);
       }
       if (endDate) {
         query.createdAt.$lte = new Date(endDate);
         codingQuery.createdAt.$lte = new Date(endDate);
+        sysDesignQuery.createdAt.$lte = new Date(endDate);
       }
     }
 
@@ -256,8 +289,15 @@ exports.getInterviewHistory = async (req, res, next) => {
       query._id = { $in: sessionIds };
 
       codingQuery.overallScore = {};
-      if (minScore) codingQuery.overallScore.$gte = Number(minScore);
-      if (maxScore) codingQuery.overallScore.$lte = Number(maxScore);
+      sysDesignQuery.overallScore = {};
+      if (minScore) {
+        codingQuery.overallScore.$gte = Number(minScore);
+        sysDesignQuery.overallScore.$gte = Number(minScore);
+      }
+      if (maxScore) {
+        codingQuery.overallScore.$lte = Number(maxScore);
+        sysDesignQuery.overallScore.$lte = Number(maxScore);
+      }
     }
 
     const pageNum = Math.max(1, parseInt(page));
@@ -348,8 +388,38 @@ exports.getInterviewHistory = async (req, res, next) => {
       });
     }
 
+    let mappedSysDesign = [];
+    if (shouldIncludeSysDesign) {
+      const sysSessions = await SystemDesignInterview.find(sysDesignQuery);
+      mappedSysDesign = sysSessions.map(sys => {
+        const isCompleted = sys.status === 'Completed';
+        const resumeCount = sys.resumedTerminatedCount || sys.resumedCount || 0;
+        const canResume = !isCompleted && resumeCount < 1;
+        const finalStatus = isCompleted ? 'Completed' : 'Terminated';
+        const score = isCompleted ? (sys.overallScore !== null && sys.overallScore !== undefined ? sys.overallScore : 0) : 0;
+
+        return {
+          _id: sys._id,
+          interviewId: sys.sessionId,
+          title: sys.title || `${sys.role} - System Design Round`,
+          role: sys.role || 'Senior Software Engineer',
+          company: 'System Design',
+          difficulty: sys.difficulty || 'Medium',
+          interviewType: 'System Design',
+          interviewMode: 'System Design',
+          questionCount: 1,
+          status: finalStatus,
+          completedAt: sys.completedAt || sys.updatedAt || sys.createdAt,
+          createdAt: sys.createdAt,
+          overallScore: score,
+          resumedTerminatedCount: resumeCount,
+          canResume: canResume
+        };
+      });
+    }
+
     // Combine and apply status filtering if needed
-    let combined = [...mappedSessions, ...mappedCoding];
+    let combined = [...mappedSessions, ...mappedCoding, ...mappedSysDesign];
     if (status) {
       combined = combined.filter(item => item.status === status);
     }
@@ -413,15 +483,32 @@ exports.getAnalytics = async (req, res, next) => {
       status: 'Completed'
     });
 
+    const completedSystemDesign = await SystemDesignInterview.find({
+      user: userId,
+      status: 'Completed'
+    });
+
     const codingTrends = completedCoding.map(c => ({
       overallScore: c.overallScore || 0,
       createdAt: c.createdAt
     }));
-    const combinedTrends = [...trends, ...codingTrends].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const sysDesignTrends = completedSystemDesign.map(s => ({
+      overallScore: s.overallScore || 0,
+      createdAt: s.createdAt
+    }));
+    const combinedTrends = [...trends, ...codingTrends, ...sysDesignTrends].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+    const typeDistribution = await InterviewSession.aggregate([
+      { $match: { user: userId } },
+      { $group: { _id: "$interviewType", count: { $sum: 1 } } }
+    ]);
 
     const typeDist = typeDistribution.map(t => ({ name: t._id, value: t.count }));
     if (completedCoding.length > 0) {
       typeDist.push({ name: 'Coding', value: completedCoding.length });
+    }
+    if (completedSystemDesign.length > 0) {
+      typeDist.push({ name: 'System Design', value: completedSystemDesign.length });
     }
 
     const sixMonthsAgo = new Date();

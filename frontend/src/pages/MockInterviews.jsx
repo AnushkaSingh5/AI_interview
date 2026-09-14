@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   FiPlay, FiClock, FiActivity, FiAward, FiBookOpen, FiUserCheck, FiSliders, 
-  FiSearch, FiFilter, FiTrash2, FiRefreshCw, FiDownload, FiEye, FiX, FiCheck, FiPlus, FiCode
+  FiSearch, FiFilter, FiTrash2, FiRefreshCw, FiDownload, FiEye, FiX, FiCheck, FiPlus, FiCode, FiLayers
 } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
@@ -192,6 +192,13 @@ const MockInterviews = () => {
       return;
     }
 
+    const isSystemDesign = (typeof item === 'object') && (item?.interviewMode === 'SystemDesign' || item?.interviewType === 'SystemDesign');
+    if (isSystemDesign) {
+      if (!window.confirm('Launch a new system design architecture round?')) return;
+      navigate('/system-design/create');
+      return;
+    }
+
     const id = (typeof item === 'object') ? item.interviewId : item;
     if (!window.confirm('Launch a retake of this interview with identical parameters?')) {
       return;
@@ -252,6 +259,14 @@ const MockInterviews = () => {
           <p className="text-muted small mb-0">Launch interactive AI interviews, review historical scores, and compare past performances.</p>
         </div>
         <div className="d-flex align-items-center gap-2">
+          <Link
+            to="/system-design/create"
+            className="btn btn-dark d-flex align-items-center gap-2 py-2.5 px-3.5 shadow-sm text-white"
+            style={{ backgroundColor: '#8b5cf6', borderColor: '#8b5cf6' }}
+          >
+            <FiLayers />
+            <span>System Design</span>
+          </Link>
           <Link
             to="/coding-interview/create"
             className="btn btn-dark d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white"
@@ -353,6 +368,7 @@ const MockInterviews = () => {
               <option value="HR">HR</option>
               <option value="Mixed">Mixed</option>
               <option value="Coding">Coding</option>
+              <option value="SystemDesign">System Design</option>
             </select>
           </div>
           <div className="col-md-2">
@@ -454,6 +470,11 @@ const MockInterviews = () => {
                             <FiCode className="me-1" /> Coding
                           </span>
                         )}
+                        {(item.interviewMode === 'SystemDesign' || item.interviewType === 'SystemDesign' || item.interviewMode === 'System Design' || item.interviewType === 'System Design') && (
+                          <span className="badge text-white rounded-pill px-2 py-0.5" style={{ fontSize: '0.68rem', backgroundColor: '#8b5cf6' }}>
+                            <FiLayers className="me-1" /> System Design
+                          </span>
+                        )}
                         <div>
                           <span className="fw-semibold text-dark d-block">{item.title}</span>
                           <span className="text-muted small" style={{ fontSize: '0.72rem' }}>{item.interviewId}</span>
@@ -492,6 +513,8 @@ const MockInterviews = () => {
                                   navigate(`/video-interview/report/${item.interviewId}`);
                                 } else if (item.interviewMode === 'Coding' || item.interviewType === 'Coding') {
                                   navigate(`/coding-interview/report/${item.interviewId}`);
+                                } else if (item.interviewMode === 'SystemDesign' || item.interviewType === 'SystemDesign' || item.interviewMode === 'System Design' || item.interviewType === 'System Design') {
+                                  navigate(`/system-design/report/${item.interviewId}`);
                                 } else {
                                   navigate(`/interview/${item.interviewId}/report`);
                                 }
@@ -501,7 +524,7 @@ const MockInterviews = () => {
                             >
                               <FiEye />
                             </button>
-                            {item.interviewMode !== 'Coding' && (
+                            {item.interviewMode !== 'Coding' && item.interviewMode !== 'SystemDesign' && item.interviewMode !== 'System Design' && (
                               <>
                                 <button
                                   onClick={() => handleOpenCompare(item)}
@@ -531,6 +554,8 @@ const MockInterviews = () => {
                                 navigate(`/video-interview/session/${item.interviewId}`);
                               } else if (item.interviewMode === 'Coding' || item.interviewType === 'Coding') {
                                 navigate(`/coding-interview/session/${item.interviewId}`);
+                              } else if (item.interviewMode === 'SystemDesign' || item.interviewType === 'SystemDesign' || item.interviewMode === 'System Design' || item.interviewType === 'System Design') {
+                                navigate(`/system-design/session/${item.interviewId}`);
                               } else {
                                 navigate(`/interview/${item.interviewId}/active`);
                               }

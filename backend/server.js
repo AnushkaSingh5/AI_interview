@@ -16,6 +16,7 @@ const voiceRoutes = require('./routes/voiceRoutes');
 const learningRoutes = require('./routes/learningRoutes');
 const videoRoutes = require('./routes/videoRoutes');
 const codingRoutes = require('./routes/codingRoutes');
+const systemDesignRoutes = require('./routes/systemDesignRoutes');
 const { apiLimiter } = require('./middleware/rateLimiter');
 
 // Initialize AI service early to enforce GEMINI_API_KEY presence validation on boot
@@ -83,6 +84,8 @@ app.use('/api/learning', learningRoutes);
 app.use('/api/video', videoRoutes);
 app.use('/api/coding', codingRoutes);
 app.use('/coding', codingRoutes);
+app.use('/api/system-design', systemDesignRoutes);
+app.use('/system-design', systemDesignRoutes);
 app.use('/uploads', (req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Origin', '*');
