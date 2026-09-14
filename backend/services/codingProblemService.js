@@ -953,7 +953,7 @@ public:
 /**
  * Retrieves a curated problem matching requested topics and difficulty
  */
-async function getProblemForInterview({ difficulty = 'Medium', topic = '', topics = [], role = 'Software Engineer' }) {
+function getProblemForInterview({ difficulty = 'Medium', topic = '', topics = [], role = 'Software Engineer' }) {
   // Normalize search keywords from topics array and topic string
   const keywords = [];
   if (Array.isArray(topics) && topics.length > 0) {

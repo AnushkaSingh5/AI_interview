@@ -235,7 +235,7 @@ const VideoSessionView = () => {
               modelAssetPath: "/models/efficientdet_lite0.tflite",
               delegate: "CPU"
             },
-            scoreThreshold: 0.18,
+            scoreThreshold: 0.45,
             runningMode: "IMAGE"
           });
           console.log('[Object Detection] MediaPipe ObjectDetector loaded from local model in IMAGE mode');
@@ -247,7 +247,7 @@ const VideoSessionView = () => {
                 modelAssetPath: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float32/1/efficientdet_lite0.tflite",
                 delegate: "CPU"
               },
-              scoreThreshold: 0.18,
+              scoreThreshold: 0.45,
               runningMode: "IMAGE"
             });
             console.log('[Object Detection] MediaPipe ObjectDetector loaded from CDN fallback');
@@ -1132,42 +1132,42 @@ const VideoSessionView = () => {
                       const objHeight = bb ? (bb.height || 0) : 0;
                       const objArea = objWidth * objHeight;
 
-                      // Reject tiny noise specks (< 450px in 320x240)
-                      if (bb && (objWidth < 16 || objHeight < 20 || objArea < 450)) {
+                      // Reject tiny noise specks (< 1200px in 320x240)
+                      if (bb && (objWidth < 28 || objHeight < 36 || objArea < 1200)) {
                         return;
                       }
 
-                      // Spatial face filter: Reject small features located entirely on the candidate's eyes/nose (e.g. eyeglasses frames)
+                      // Spatial face & head filter: Reject detections centered on candidate's face/chin/head (e.g. eyeglasses, hand on chin)
                       if (bb && faceBoundingBox) {
                         const objCenterX = bb.originX + objWidth / 2;
                         const objCenterY = bb.originY + objHeight / 2;
-                        const isInsideUpperFace = (
-                          objCenterX >= faceBoundingBox.minX &&
-                          objCenterX <= faceBoundingBox.maxX &&
-                          objCenterY >= faceBoundingBox.minY &&
-                          objCenterY <= (faceBoundingBox.minY + faceBoundingBox.height * 0.70)
+                        const isInsideFaceRegion = (
+                          objCenterX >= (faceBoundingBox.minX - 20) &&
+                          objCenterX <= (faceBoundingBox.maxX + 20) &&
+                          objCenterY >= (faceBoundingBox.minY - 20) &&
+                          objCenterY <= (faceBoundingBox.maxY + 40)
                         );
-                        if (isInsideUpperFace && objWidth < faceBoundingBox.width * 0.75) {
+                        if (isInsideFaceRegion && objWidth < faceBoundingBox.width * 0.90) {
                           return;
                         }
                       }
 
-                      // Calibrated confidence thresholds
+                      // Calibrated confidence thresholds (prevents false positives from hands, curtains, reflections)
                       const isPhone = catLower.includes('phone') || catLower.includes('cell') || catLower.includes('mobile') || catLower.includes('telephone');
                       const isRemote = catLower.includes('remote');
                       const isLaptopTablet = catLower.includes('laptop') || catLower.includes('tablet');
                       const isBook = catLower.includes('book');
                       const isTv = catLower.includes('tv');
 
-                      const minScore = isPhone ? 0.22
-                        : isRemote ? 0.24
-                        : isLaptopTablet ? 0.25
-                        : isBook ? 0.26
-                        : isTv ? 0.35
-                        : 0.25;
+                      const minScore = isPhone ? 0.58
+                        : isRemote ? 0.55
+                        : isLaptopTablet ? 0.55
+                        : isBook ? 0.55
+                        : isTv ? 0.60
+                        : 0.55;
 
                       if (cat.score < minScore) return;
-                      if (isTv && objArea < frameArea * 0.04) return;
+                      if (isTv && objArea < frameArea * 0.08) return;
 
                       const displayName = (isPhone || isRemote)
                         ? 'Cell Phone / Mobile Device'
@@ -1181,19 +1181,21 @@ const VideoSessionView = () => {
                     });
 
                     if (foundItems.length > 0) {
-                      // Immediate activation on confirmed detection frame
-                      consecutiveObjectDetectionsRef.current = 3;
-                      const primaryItem = foundItems[0].name;
-                      setProhibitedObjectAlert({ active: true, label: primaryItem });
-                      const timeSinceLastEvent = Date.now() - lastProhibitedEventTimeRef.current;
-                      if (timeSinceLastEvent > 12000) {
-                        lastProhibitedEventTimeRef.current = Date.now();
-                        prohibitedObjectEventsRef.current++;
-                        addTimelineEvent('PROHIBITED_OBJECT', `Prohibited object detected: ${primaryItem}`);
-                        toast.warn(`⚠️ Proctoring Alert: ${primaryItem} detected in webcam frame!`, { toastId: 'prohibited-object-alert' });
+                      // Multi-frame confirmation: require at least 3 consecutive positive detection cycles (~1 second)
+                      consecutiveObjectDetectionsRef.current = (consecutiveObjectDetectionsRef.current || 0) + 1;
+                      if (consecutiveObjectDetectionsRef.current >= 3) {
+                        const primaryItem = foundItems[0].name;
+                        setProhibitedObjectAlert({ active: true, label: primaryItem });
+                        const timeSinceLastEvent = Date.now() - lastProhibitedEventTimeRef.current;
+                        if (timeSinceLastEvent > 12000) {
+                          lastProhibitedEventTimeRef.current = Date.now();
+                          prohibitedObjectEventsRef.current++;
+                          addTimelineEvent('PROHIBITED_OBJECT', `Prohibited object detected: ${primaryItem}`);
+                          toast.warn(`⚠️ Proctoring Alert: ${primaryItem} detected in webcam frame!`, { toastId: 'prohibited-object-alert' });
+                        }
                       }
                     } else {
-                      // Decay accumulator on clean frame
+                      // Decay accumulator on clean frames
                       if (consecutiveObjectDetectionsRef.current > 0) {
                         consecutiveObjectDetectionsRef.current -= 1;
                       }

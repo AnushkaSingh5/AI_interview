@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   FiArrowLeft, FiArrowRight, FiCheck, FiCpu, FiAward, FiClock, 
-  FiMessageSquare, FiSettings, FiCheckCircle, FiFileText, FiInfo, FiLayers
+  FiMessageSquare, FiSettings, FiCheckCircle, FiFileText, FiInfo, FiLayers, FiCode, FiZap
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import axiosInstance from '../api/axiosInstance';
@@ -19,29 +19,29 @@ const InterviewCreate = () => {
 
   // Wizard Configuration State
   const [formData, setFormData] = useState({
-    interviewType: 'ResumeBased', // 'ResumeBased', 'Technical', 'HR', 'Mixed', 'Custom'
+    interviewType: 'FullLoop', // 'FullLoop', 'ResumeBased', 'Technical', 'HR', 'Mixed', 'Custom'
     role: '',
     company: '',
     experienceLevel: '0-1 Years',
     difficulty: 'Medium',
-    duration: 20,
+    duration: 30,
     questionCount: 10,
     preferredLanguage: 'English',
     focusAreas: [],
     interviewMode: 'Text',
     // Multi-mode configuration extensions
-    selectedTopics: [],
+    selectedTopics: ['DSA', 'System Design'],
     hrTopics: [],
     useResume: false,
     useProjects: false,
     useExperience: false,
-    questionDistribution: { technical: 60, hr: 20, resume: 20 }
+    questionDistribution: { technical: 50, hr: 20, resume: 30 }
   });
 
   const techTopicsPool = [
-    'JavaScript', 'React', 'Node.js', 'DBMS', 'SQL', 
-    'Operating Systems', 'Computer Networks', 'OOP', 'DSA', 
-    'System Design', 'MongoDB', 'Express', 'Next.js'
+    'DSA', 'Algorithms', 'System Design', 'JavaScript', 'React', 'Node.js', 
+    'Python', 'Java', 'C++', 'DBMS', 'SQL', 'Operating Systems', 
+    'Computer Networks', 'OOP', 'MongoDB', 'Express', 'Next.js', 'Low-Level Design'
   ];
 
   const hrTopicsPool = [
@@ -101,9 +101,9 @@ const InterviewCreate = () => {
   const handleDurationChange = (minutes) => {
     let questions = 10;
     if (minutes === 10) questions = 5;
-    else if (minutes === 20) questions = 10;
-    else if (minutes === 30) questions = 15;
-    else if (minutes >= 45) questions = 20;
+    else if (minutes === 20) questions = 8;
+    else if (minutes === 30) questions = 10;
+    else if (minutes >= 45) questions = 15;
 
     setFormData(prev => ({
       ...prev,
@@ -172,6 +172,9 @@ const InterviewCreate = () => {
     }
   };
 
+  const hasCodingTopic = formData.selectedTopics.some(t => ['DSA', 'Algorithms', 'Python', 'Java', 'C++', 'JavaScript'].includes(t)) || formData.interviewType === 'FullLoop';
+  const hasSystemDesignTopic = formData.selectedTopics.some(t => ['System Design', 'Low-Level Design'].includes(t)) || formData.interviewType === 'FullLoop';
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
@@ -203,7 +206,7 @@ const InterviewCreate = () => {
               <div className="col-6">
                 <span className="text-muted d-block">Interview Type</span>
                 <strong className="text-dark">
-                  {createdSession.interviewType === 'ResumeBased' ? 'Resume Based' : createdSession.interviewType}
+                  {createdSession.interviewType === 'FullLoop' ? 'Full-Loop FAANG Onsite (3 Rounds)' : createdSession.interviewType === 'ResumeBased' ? 'Resume Based' : createdSession.interviewType}
                 </strong>
               </div>
               <div className="col-6">
@@ -223,6 +226,15 @@ const InterviewCreate = () => {
                 <strong className="text-dark">{createdSession.questionCount} Questions</strong>
               </div>
             </div>
+
+            {createdSession.interviewType === 'FullLoop' && (
+              <div className="mt-3 p-2 rounded bg-white border border-primary-subtle d-flex align-items-center gap-2">
+                <FiZap className="text-primary flex-shrink-0" />
+                <span className="small text-primary fw-semibold" style={{ fontSize: '0.78rem' }}>
+                  Includes Round 1 (Screening) + Round 2 (Monaco Live Coding) + Round 3 (Visual System Design Studio)
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="d-flex flex-column gap-2">
@@ -284,6 +296,19 @@ const InterviewCreate = () => {
                 </div>
               ))}
             </div>
+
+            {/* Dynamic Interactive Capabilities Box */}
+            <div className="mt-4 pt-3 border-top">
+              <span className="text-muted d-block mb-2 fw-semibold" style={{ fontSize: '0.7rem', textTransform: 'uppercase' }}>Active Interactive Modules</span>
+              <div className="d-flex flex-column gap-1.5" style={{ fontSize: '0.72rem' }}>
+                <div className={`p-1.5 rounded border d-flex align-items-center gap-1.5 ${hasCodingTopic ? 'bg-primary bg-opacity-10 border-primary text-primary fw-semibold' : 'bg-light text-muted'}`}>
+                  <FiCode /> Live Monaco Code Editor
+                </div>
+                <div className={`p-1.5 rounded border d-flex align-items-center gap-1.5 ${hasSystemDesignTopic ? 'bg-primary bg-opacity-10 border-primary text-primary fw-semibold' : 'bg-light text-muted'}`}>
+                  <FiLayers /> Visual Architecture Studio
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -306,11 +331,37 @@ const InterviewCreate = () => {
                     <h3 className="h6 fw-bold mb-4 text-dark border-bottom pb-2">Step 1: Choose Interview Type</h3>
                     <div className="row g-3">
                       {[
-                        { type: 'ResumeBased', title: 'Resume Based', desc: 'AI generates questions from your resume, projects, skills and experience.' },
-                        { type: 'Technical', title: 'Technical Interview', desc: 'DSA, JavaScript, React, Node.js, DBMS, OS, Computer Networks, OOP, SQL, etc.' },
-                        { type: 'HR', title: 'HR Interview', desc: 'Tell me about yourself, strengths, weaknesses, conflict handling, leadership, behavioural questions.' },
-                        { type: 'Mixed', title: 'Mixed Interview', desc: 'Technical + HR + Projects' },
-                        { type: 'Custom', title: 'Custom Interview', desc: 'User selects topics manually.' }
+                        { 
+                          type: 'FullLoop', 
+                          title: 'Full-Loop FAANG Onsite', 
+                          badge: '⭐ Recommended',
+                          desc: 'Complete 3-round simulation: Round 1 (Technical & Behavioral) -> Round 2 (Monaco Live Coding) -> Round 3 (Visual System Design Studio).' 
+                        },
+                        { 
+                          type: 'ResumeBased', 
+                          title: 'Resume Based', 
+                          desc: 'AI generates questions directly from your resume, projects, skills, and past experience.' 
+                        },
+                        { 
+                          type: 'Technical', 
+                          title: 'Technical Interview', 
+                          desc: 'DSA, Coding Challenges, System Design, JavaScript, React, DBMS, OS, Networks, OOP, etc.' 
+                        },
+                        { 
+                          type: 'HR', 
+                          title: 'HR Interview', 
+                          desc: 'Tell me about yourself, behavioral questions, conflict resolution, leadership, and culture fit.' 
+                        },
+                        { 
+                          type: 'Mixed', 
+                          title: 'Mixed Interview', 
+                          desc: 'Balanced combination of Technical concepts, HR questions, and Resume project deep-dives.' 
+                        },
+                        { 
+                          type: 'Custom', 
+                          title: 'Custom Interview', 
+                          desc: 'Fine-tune every technical topic, HR domain, and resume weight manually.' 
+                        }
                       ].map((card, idx) => (
                         <div className="col-md-4 col-sm-6" key={idx}>
                           <div 
@@ -324,7 +375,16 @@ const InterviewCreate = () => {
                               borderColor: formData.interviewType === card.type ? 'var(--primary-purple)' : ''
                             }}
                           >
-                            <span className="badge bg-primary bg-opacity-10 text-primary mb-2" style={{ backgroundColor: 'var(--primary-purple-light)', color: 'var(--primary-purple)' }}>{card.title}</span>
+                            <div className="d-flex justify-content-between align-items-start mb-2">
+                              <span className="badge bg-primary bg-opacity-10 text-primary" style={{ backgroundColor: 'var(--primary-purple-light)', color: 'var(--primary-purple)' }}>
+                                {card.title}
+                              </span>
+                              {card.badge && (
+                                <span className="badge bg-success bg-opacity-10 text-success" style={{ fontSize: '0.65rem' }}>
+                                  {card.badge}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-muted small mb-0 mt-2" style={{ fontSize: '0.74rem', lineHeight: '1.4' }}>{card.desc}</p>
                           </div>
                         </div>
@@ -349,7 +409,7 @@ const InterviewCreate = () => {
                           <option value="Frontend Developer">Frontend Developer</option>
                           <option value="Backend Developer">Backend Developer</option>
                           <option value="Full Stack Developer">Full Stack Developer</option>
-                          <option value="Software Engineer">Software Engineer</option>
+                          <option value="Software Engineer">Software Engineer (SDE / SWE)</option>
                           <option value="Data Analyst">Data Analyst</option>
                           <option value="AI Engineer">AI Engineer</option>
                           <option value="DevOps Engineer">DevOps Engineer</option>
@@ -358,7 +418,7 @@ const InterviewCreate = () => {
                         <label className="form-label-mock">Custom Job Role (if not listed)</label>
                         <input 
                           type="text" 
-                          placeholder="e.g. QA Engineer, Product Manager"
+                          placeholder="e.g. Distributed Systems Engineer, QA Architect"
                           className="input-mock"
                           value={formData.role}
                           onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
@@ -369,7 +429,7 @@ const InterviewCreate = () => {
                         <label className="form-label-mock">Target Company (Optional)</label>
                         <input 
                           type="text" 
-                          placeholder="e.g. Google, Microsoft, Amazon"
+                          placeholder="e.g. Google, Microsoft, Amazon, Meta, Uber"
                           className="input-mock mb-3"
                           value={formData.company}
                           onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
@@ -424,63 +484,30 @@ const InterviewCreate = () => {
                   <div>
                     <h3 className="h6 fw-bold mb-3 text-dark border-bottom pb-2">Step 3: Topics & Source Setup</h3>
                     
-                    {/* Resume Based Options */}
-                    {formData.interviewType === 'ResumeBased' && (
-                      <div>
-                        <p className="text-muted small mb-4">Select components of your resume for the AI to prioritize.</p>
-                        
-                        {!profile?.resumeId ? (
-                          <div className="p-4 border border-danger border-opacity-25 bg-danger bg-opacity-10 rounded-3 text-center mb-3">
-                            <span className="text-danger small fw-bold">⚠️ No Resume Uploaded</span>
-                            <p className="text-muted small mb-0 mt-1">Please select another interview mode or go to Profile to upload your resume first.</p>
-                          </div>
-                        ) : (
-                          <div className="row g-3">
-                            {[
-                              { label: 'Prioritize Resume Work Experience', field: 'useExperience', desc: 'Focuses questions on your professional role descriptions.' },
-                              { label: 'Prioritize Resume Projects', field: 'useProjects', desc: 'Focuses questions on listed technical stack and project metrics.' },
-                              { label: 'Prioritize Resume Skills & Achievements', field: 'useResume', desc: 'General screening of certifications, tech stack, and achievements.' }
-                            ].map((opt, i) => (
-                              <div className="col-12" key={i}>
-                                <div 
-                                  onClick={() => setFormData(prev => ({ ...prev, [opt.field]: !prev[opt.field] }))}
-                                  className={`border rounded-3 p-3 cursor-pointer d-flex justify-content-between align-items-center ${
-                                    formData[opt.field] ? 'border-primary bg-light bg-opacity-25' : 'border-secondary-subtle'
-                                  }`}
-                                  style={{ cursor: 'pointer' }}
-                                >
-                                  <div>
-                                    <strong className="text-dark small d-block mb-1">{opt.label}</strong>
-                                    <span className="text-muted" style={{ fontSize: '0.72rem' }}>{opt.desc}</span>
-                                  </div>
-                                  <div className={`p-1.5 rounded-circle ${formData[opt.field] ? 'bg-primary text-white' : 'bg-light border'}`}>
-                                    <FiCheck style={{ fontSize: '0.8rem', opacity: formData[opt.field] ? 1 : 0 }} />
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Technical Topics Selection */}
-                    {formData.interviewType === 'Technical' && (
-                      <div>
-                        <p className="text-muted small mb-3">Select one or more domain topics for your technical questions.</p>
+                    {/* Full Loop / Technical / Custom Topics Selection */}
+                    {(formData.interviewType === 'FullLoop' || formData.interviewType === 'Technical' || formData.interviewType === 'Custom' || formData.interviewType === 'Mixed') && (
+                      <div className="mb-4">
+                        <div className="d-flex justify-content-between align-items-center mb-2">
+                          <p className="text-muted small mb-0">Select technical topics and interactive challenge domains.</p>
+                          <span className="text-primary small fw-bold" style={{ fontSize: '0.72rem' }}>
+                            {formData.selectedTopics.length} Selected
+                          </span>
+                        </div>
                         <div className="d-flex flex-wrap gap-2 mb-3">
                           {techTopicsPool.map((topic, idx) => {
                             const isSelected = formData.selectedTopics.includes(topic);
+                            const isInteractive = ['DSA', 'Algorithms', 'System Design', 'Low-Level Design'].includes(topic);
                             return (
                               <button
                                 type="button"
                                 key={idx}
                                 onClick={() => toggleTechTopic(topic)}
-                                className={`btn btn-sm rounded-pill py-2 px-3 transition-all ${
+                                className={`btn btn-sm rounded-pill py-2 px-3 transition-all d-flex align-items-center gap-1.5 ${
                                   isSelected ? 'btn-primary-purple' : 'btn-white-custom border'
                                 }`}
                                 style={{ fontSize: '0.76rem' }}
                               >
+                                {isInteractive && <FiZap className="text-warning" />}
                                 {topic}
                               </button>
                             );
@@ -490,9 +517,9 @@ const InterviewCreate = () => {
                     )}
 
                     {/* HR Topics Selection */}
-                    {formData.interviewType === 'HR' && (
-                      <div>
-                        <p className="text-muted small mb-3">Select behavioral areas for your HR questions.</p>
+                    {(formData.interviewType === 'FullLoop' || formData.interviewType === 'HR' || formData.interviewType === 'Custom' || formData.interviewType === 'Mixed') && (
+                      <div className="mb-4">
+                        <p className="text-muted small mb-2">Select behavioral and communication topics for HR rounds:</p>
                         <div className="d-flex flex-wrap gap-2 mb-3">
                           {hrTopicsPool.map((topic, idx) => {
                             const isSelected = formData.hrTopics.includes(topic);
@@ -514,107 +541,42 @@ const InterviewCreate = () => {
                       </div>
                     )}
 
-                    {/* Mixed Mode Setup */}
-                    {formData.interviewType === 'Mixed' && (
-                      <div>
-                        <p className="text-muted small mb-4">Configure the distribution of questions across categories.</p>
-                        <div className="row g-3">
-                          <div className="col-md-4">
-                            <label className="form-label-mock">Technical Questions (%)</label>
-                            <input 
-                              type="number" 
-                              min="0" max="100"
-                              className="input-mock"
-                              value={formData.questionDistribution.technical}
-                              onChange={(e) => setFormData(prev => ({
-                                ...prev,
-                                questionDistribution: { ...prev.questionDistribution, technical: parseInt(e.target.value) || 0 }
-                              }))}
-                            />
+                    {/* Resume Based Options */}
+                    {(formData.interviewType === 'ResumeBased' || formData.interviewType === 'Mixed' || formData.interviewType === 'Custom') && (
+                      <div className="border-top pt-3">
+                        <p className="text-muted small mb-3">Resume prioritization options:</p>
+                        {!profile?.resumeId ? (
+                          <div className="p-3 border border-warning border-opacity-25 bg-warning bg-opacity-10 rounded-3 text-start mb-2">
+                            <span className="text-warning-emphasis small fw-bold">⚠️ No resume attached</span>
+                            <p className="text-muted small mb-0 mt-1">AI will rely primarily on selected role, tech topics, and standard job questions.</p>
                           </div>
-                          <div className="col-md-4">
-                            <label className="form-label-mock">HR Questions (%)</label>
-                            <input 
-                              type="number" 
-                              min="0" max="100"
-                              className="input-mock"
-                              value={formData.questionDistribution.hr}
-                              onChange={(e) => setFormData(prev => ({
-                                ...prev,
-                                questionDistribution: { ...prev.questionDistribution, hr: parseInt(e.target.value) || 0 }
-                              }))}
-                            />
+                        ) : (
+                          <div className="row g-2">
+                            {[
+                              { label: 'Prioritize Past Experience', field: 'useExperience', desc: 'Questions about work history and past company roles.' },
+                              { label: 'Prioritize Resume Projects', field: 'useProjects', desc: 'Deep dive into portfolio tech stacks and architecture.' },
+                              { label: 'Prioritize Listed Skills', field: 'useResume', desc: 'Questions on skills and tools listed in resume.' }
+                            ].map((opt, i) => (
+                              <div className="col-12" key={i}>
+                                <div 
+                                  onClick={() => setFormData(prev => ({ ...prev, [opt.field]: !prev[opt.field] }))}
+                                  className={`border rounded-3 p-2.5 cursor-pointer d-flex justify-content-between align-items-center ${
+                                    formData[opt.field] ? 'border-primary bg-light bg-opacity-25' : 'border-secondary-subtle'
+                                  }`}
+                                  style={{ cursor: 'pointer' }}
+                                >
+                                  <div>
+                                    <strong className="text-dark small d-block">{opt.label}</strong>
+                                    <span className="text-muted" style={{ fontSize: '0.72rem' }}>{opt.desc}</span>
+                                  </div>
+                                  <div className={`p-1 rounded-circle ${formData[opt.field] ? 'bg-primary text-white' : 'bg-light border'}`}>
+                                    <FiCheck style={{ fontSize: '0.75rem', opacity: formData[opt.field] ? 1 : 0 }} />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                          <div className="col-md-4">
-                            <label className="form-label-mock">Resume References (%)</label>
-                            <input 
-                              type="number" 
-                              min="0" max="100"
-                              className="input-mock"
-                              value={formData.questionDistribution.resume || 20}
-                              onChange={(e) => setFormData(prev => ({
-                                ...prev,
-                                questionDistribution: { ...prev.questionDistribution, resume: parseInt(e.target.value) || 0 }
-                              }))}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Custom Mode Setup */}
-                    {formData.interviewType === 'Custom' && (
-                      <div>
-                        <p className="text-muted small mb-3">Custom Select Technical topics:</p>
-                        <div className="d-flex flex-wrap gap-1.5 mb-4">
-                          {techTopicsPool.map((topic, idx) => {
-                            const isSelected = formData.selectedTopics.includes(topic);
-                            return (
-                              <button
-                                type="button"
-                                key={idx}
-                                onClick={() => toggleTechTopic(topic)}
-                                className={`btn btn-xs rounded-pill py-1 px-2 border transition-all ${
-                                  isSelected ? 'btn-primary-purple' : 'btn-light'
-                                }`}
-                                style={{ fontSize: '0.7rem' }}
-                              >
-                                {topic}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <p className="text-muted small mb-3">Custom Select HR topics:</p>
-                        <div className="d-flex flex-wrap gap-1.5 mb-4">
-                          {hrTopicsPool.map((topic, idx) => {
-                            const isSelected = formData.hrTopics.includes(topic);
-                            return (
-                              <button
-                                type="button"
-                                key={idx}
-                                onClick={() => toggleHrTopic(topic)}
-                                className={`btn btn-xs rounded-pill py-1 px-2 border transition-all ${
-                                  isSelected ? 'btn-primary-purple' : 'btn-light'
-                                }`}
-                                style={{ fontSize: '0.7rem' }}
-                              >
-                                {topic}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <div className="border-top pt-3">
-                          <label className="d-flex align-items-center gap-2 cursor-pointer small text-dark">
-                            <input 
-                              type="checkbox" 
-                              checked={formData.useResume} 
-                              onChange={(e) => setFormData(prev => ({ ...prev, useResume: e.target.checked }))}
-                            />
-                            Include Resume references in Custom Mode
-                          </label>
-                        </div>
+                        )}
                       </div>
                     )}
 
@@ -649,7 +611,7 @@ const InterviewCreate = () => {
                     <div className="mb-4">
                       <label className="form-label-mock">Questions count</label>
                       <div className="row g-2">
-                        {[5, 10, 15, 20].map((qCount, idx) => (
+                        {[5, 8, 10, 15, 20].map((qCount, idx) => (
                           <div className="col" key={idx}>
                             <div 
                               onClick={() => setFormData(prev => ({ ...prev, questionCount: qCount }))}
@@ -670,9 +632,9 @@ const InterviewCreate = () => {
                       <label className="form-label-mock">Select Interview Mode</label>
                       <div className="row g-3">
                         {[
-                          { mode: 'Text', desc: 'Standard interactive text chat console.', active: true },
-                          { mode: 'Voice', desc: 'Real-time STT voice & vocal communication analysis.', active: true },
-                          { mode: 'Video', desc: 'Webcam video mock interview with live non-verbal & speech grading.', active: true }
+                          { mode: 'Text', desc: 'Interactive console with embedded live code compiler & architecture canvas.', active: true },
+                          { mode: 'Voice', desc: 'Real-time vocal speech analysis + interactive code/architecture studio.', active: true },
+                          { mode: 'Video', desc: 'Webcam video interview with live non-verbal, vocal & technical IDE grading.', active: true }
                         ].map((item, idx) => (
                           <div className="col-md-4" key={idx}>
                             <div 
@@ -701,7 +663,7 @@ const InterviewCreate = () => {
                         <div className="col-md-6">
                           <span className="text-muted d-block">Interview Type</span>
                           <strong className="text-dark">
-                            {formData.interviewType === 'ResumeBased' ? 'Resume Based' : formData.interviewType}
+                            {formData.interviewType === 'FullLoop' ? 'Full-Loop FAANG Onsite (3 Rounds)' : formData.interviewType === 'ResumeBased' ? 'Resume Based' : formData.interviewType}
                           </strong>
                         </div>
                         <div className="col-md-6">
@@ -731,8 +693,8 @@ const InterviewCreate = () => {
                           <strong className="text-dark">{formData.questionCount} Questions</strong>
                         </div>
                         <div className="col-md-6">
-                          <span className="text-muted d-block">Preferred Language</span>
-                          <strong className="text-dark">{formData.preferredLanguage}</strong>
+                          <span className="text-muted d-block">Interview Mode</span>
+                          <strong className="text-dark">{formData.interviewMode} ({formData.preferredLanguage})</strong>
                         </div>
                         
                         {formData.selectedTopics.length > 0 && (
@@ -756,6 +718,26 @@ const InterviewCreate = () => {
                             </div>
                           </div>
                         )}
+
+                        <div className="col-12 border-top pt-2">
+                          <span className="text-muted d-block mb-1">Interactive Features Enabled:</span>
+                          <div className="d-flex flex-wrap gap-2">
+                            {hasCodingTopic && (
+                              <span className="badge bg-info bg-opacity-10 text-info px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                💻 Embedded Monaco Live Code Editor (5 Languages)
+                              </span>
+                            )}
+                            {hasSystemDesignTopic && (
+                              <span className="badge bg-primary bg-opacity-10 text-primary px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                                🎨 Drag & Drop Visual Architecture Studio
+                              </span>
+                            )}
+                            <span className="badge bg-success bg-opacity-10 text-success px-2 py-1" style={{ fontSize: '0.72rem' }}>
+                              🔒 Proctoring Lockdown & Fullscreen Enforcer
+                            </span>
+                          </div>
+                        </div>
+
                       </div>
                     </div>
                   </div>

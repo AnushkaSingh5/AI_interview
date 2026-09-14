@@ -18,7 +18,7 @@ const InterviewSessionSchema = new mongoose.Schema({
   interviewType: {
     type: String,
     required: true,
-    enum: ['Technical', 'HR', 'Mixed', 'ResumeBased', 'Custom']
+    enum: ['Technical', 'HR', 'Mixed', 'ResumeBased', 'Custom', 'FullLoop']
   },
   role: {
     type: String,
@@ -40,14 +40,13 @@ const InterviewSessionSchema = new mongoose.Schema({
   },
   duration: {
     type: Number,
-    required: true,
-    enum: [10, 20, 30, 45, 60]
+    required: true
   },
   questionCount: {
     type: Number,
     required: true,
-    min: 5,
-    max: 20
+    min: 1,
+    max: 25
   },
   preferredLanguage: {
     type: String,
@@ -82,10 +81,22 @@ const InterviewSessionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  currentStage: {
+    type: Number,
+    default: 1
+  },
+  stagesSummary: [
+    {
+      stageNumber: Number,
+      stageName: String,
+      status: String,
+      score: Number
+    }
+  ],
   interviewMode: {
     type: String,
     required: true,
-    enum: ['Text', 'Voice', 'Video'],
+    enum: ['Text', 'Voice', 'Video', 'Hybrid'],
     default: 'Text'
   },
   status: {
@@ -98,36 +109,34 @@ const InterviewSessionSchema = new mongoose.Schema({
     ],
     default: 'Created'
   },
-  currentQuestion: {
+  currentQuestionIndex: {
     type: Number,
-    default: 1
+    default: 0
+  },
+  instructionsViewedAt: {
+    type: Date
   },
   startedAt: {
     type: Date
   },
-  submittedAt: {
+  completedAt: {
     type: Date
   },
-  totalQuestions: {
-    type: Number
-  },
-  answeredQuestions: {
+  resumedCount: {
     type: Number,
     default: 0
-  },
-  progress: {
-    type: Number,
-    default: 0
-  },
-  timeRemaining: {
-    type: Number
   },
   resumedTerminatedCount: {
     type: Number,
     default: 0
   },
-  completedAt: {
-    type: Date
+  overallScore: {
+    type: Number,
+    default: null
+  },
+  evaluationReportId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'InterviewEvaluation'
   }
 }, {
   timestamps: true

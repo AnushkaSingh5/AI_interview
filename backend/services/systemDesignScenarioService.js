@@ -353,7 +353,7 @@ const CURATED_SCENARIOS = [
 ]
 ;
 
-async function getScenarioForInterview({ problemId, domain, difficulty }) {
+function getScenarioForInterview({ problemId, domain, difficulty } = {}) {
   if (problemId) {
     const found = CURATED_SCENARIOS.find(s => s.problemId === problemId);
     if (found) return found;

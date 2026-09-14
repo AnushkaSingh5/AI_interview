@@ -1,3 +1,4 @@
+const User = require('../models/User');
 const UserLearningProfile = require('../models/UserLearningProfile');
 const InterviewSession = require('../models/InterviewSession');
 const VoiceInterview = require('../models/VoiceInterview');

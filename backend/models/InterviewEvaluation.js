@@ -59,7 +59,7 @@ const InterviewEvaluationSchema = new mongoose.Schema({
   },
   evaluationEngine: {
     type: String,
-    enum: ['Gemini', 'Local'],
+    enum: ['Gemini', 'Local', 'Direct'],
     default: 'Gemini'
   },
   createdAt: {

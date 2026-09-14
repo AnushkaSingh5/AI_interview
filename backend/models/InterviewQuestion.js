@@ -15,10 +15,18 @@ const InterviewQuestionSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
+  stageNumber: {
+    type: Number,
+    default: 1
+  },
+  stageName: {
+    type: String,
+    default: 'Technical Assessment'
+  },
   questionType: {
     type: String,
     required: true,
-    enum: ['technical', 'behavioral', 'hr', 'project']
+    enum: ['technical', 'behavioral', 'hr', 'project', 'coding', 'system_design', 'conceptual']
   },
   topic: {
     type: String,
@@ -40,6 +48,56 @@ const InterviewQuestionSchema = new mongoose.Schema({
   hints: {
     type: [String],
     default: []
+  },
+  // Dynamic Coding Challenge Details
+  codingDetails: {
+    problemId: String,
+    category: String,
+    functionName: String,
+    starterTemplates: {
+      c: String,
+      cpp: String,
+      java: String,
+      python: String,
+      javascript: String
+    },
+    sampleTestCases: [
+      {
+        input: String,
+        expectedOutput: String,
+        explanation: String
+      }
+    ],
+    hiddenTestCases: [
+      {
+        input: String,
+        expectedOutput: String
+      }
+    ],
+    constraints: [String],
+    selectedLanguage: { type: String, default: 'javascript' },
+    userCode: { type: String, default: '' },
+    executionResults: [mongoose.Schema.Types.Mixed]
+  },
+  // Dynamic System Design Challenge Details
+  systemDesignDetails: {
+    problemId: String,
+    domain: String,
+    overview: String,
+    functionalRequirements: [String],
+    nonFunctionalRequirements: [String],
+    scaleEstimates: [String],
+    starterComponents: [mongoose.Schema.Types.Mixed],
+    diagramNodes: [mongoose.Schema.Types.Mixed],
+    diagramConnections: [mongoose.Schema.Types.Mixed],
+    designDoc: {
+      systemOverview: String,
+      apiEndpoints: String,
+      dataModels: String,
+      cachingStrategy: String,
+      faultTolerance: String,
+      tradeOffs: String
+    }
   },
   answer: {
     type: String,

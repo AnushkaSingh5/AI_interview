@@ -41,31 +41,51 @@ const PracticeHub = () => {
   const fetchHubData = async () => {
     setLoading(true);
     try {
-      const [topRes, statRes, roadRes, fcRes, bmRes] = await Promise.all([
+      const results = await Promise.allSettled([
         axiosInstance.get('/practice/topics'),
         axiosInstance.get('/practice/stats'),
         axiosInstance.get('/practice/roadmap'),
         axiosInstance.get('/practice/flashcards'),
-        axiosInstance.get('/practice/bookmarks')
+        axiosInstance.get('/practice/bookmarks'),
+        axiosInstance.get('/learning/profile')
       ]);
 
-      if (topRes.data.success) setTopicsData(topRes.data);
-      if (statRes.data.success) setStats(statRes.data);
-      if (roadRes.data.success) setRoadmap(roadRes.data.roadmap);
-      if (fcRes.data.success) setFlashcards(fcRes.data.flashcards || []);
-      if (bmRes.data.success) setBookmarks(bmRes.data.bookmarks || []);
-      
-      try {
-        const learnRes = await axiosInstance.get('/learning/profile');
-        if (learnRes.data.success) {
-          setLearningProfile(learnRes.data.profile);
-        }
-      } catch (e) {
-        console.warn('Learning profile fetch failed:', e.message);
+      const [topRes, statRes, roadRes, fcRes, bmRes, learnRes] = results;
+
+      if (topRes.status === 'fulfilled' && topRes.value?.data?.success) {
+        setTopicsData(topRes.value.data);
+      } else {
+        // Fallback standard topics if offline / cold start
+        setTopicsData({
+          weakTopics: [],
+          technicalTopics: ['JavaScript', 'React', 'Node.js', 'Express', 'MongoDB', 'DBMS', 'Operating Systems', 'Computer Networks', 'System Design', 'Data Structures'],
+          softTopics: ['Tell Me About Yourself', 'Strengths & Weaknesses', 'Conflict Resolution', 'Leadership', 'Handling Pressure', 'STAR Method Teamwork'],
+          companies: ['Google', 'Amazon', 'Microsoft', 'Adobe', 'Infosys', 'TCS', 'Accenture', 'Flipkart']
+        });
+      }
+
+      if (statRes.status === 'fulfilled' && statRes.value?.data?.success) {
+        setStats(statRes.value.data);
+      }
+
+      if (roadRes.status === 'fulfilled' && roadRes.value?.data?.success) {
+        setRoadmap(roadRes.value.data.roadmap);
+      }
+
+      if (fcRes.status === 'fulfilled' && fcRes.value?.data?.success) {
+        setFlashcards(fcRes.value.data.flashcards || []);
+      }
+
+      if (bmRes.status === 'fulfilled' && bmRes.value?.data?.success) {
+        setBookmarks(bmRes.value.data.bookmarks || []);
+      }
+
+      if (learnRes.status === 'fulfilled' && learnRes.value?.data?.success) {
+        setLearningProfile(learnRes.value.data.profile);
       }
     } catch (error) {
       console.error('Error fetching Practice Hub data:', error);
-      toast.error('Failed to load practice hub data');
+      toast.error('Failed to load some practice hub data');
     } finally {
       setLoading(false);
     }

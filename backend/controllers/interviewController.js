@@ -515,7 +515,7 @@ exports.saveAnswer = async (req, res, next) => {
       });
     }
 
-    const { questionId, answer, timeTaken, skipped, currentQuestionIndex } = req.body;
+    const { questionId, answer, timeTaken, skipped, currentQuestionIndex, codeDetails, systemDesignDetails } = req.body;
 
     if (!questionId) {
       return res.status(400).json({ success: false, message: 'Question ID is required.' });
@@ -532,6 +532,8 @@ exports.saveAnswer = async (req, res, next) => {
       answerDoc.answer = answer !== undefined ? answer : answerDoc.answer;
       answerDoc.timeTaken = timeTaken !== undefined ? timeTaken : answerDoc.timeTaken;
       answerDoc.skipped = skipped !== undefined ? skipped : answerDoc.skipped;
+      if (codeDetails) answerDoc.codeDetails = codeDetails;
+      if (systemDesignDetails) answerDoc.systemDesignDetails = systemDesignDetails;
       await answerDoc.save();
     } else {
       // Create new draft
@@ -540,9 +542,30 @@ exports.saveAnswer = async (req, res, next) => {
         questionId,
         user: req.user._id,
         answer: answer || '',
+        codeDetails: codeDetails || null,
+        systemDesignDetails: systemDesignDetails || null,
         timeTaken: timeTaken || 0,
         skipped: !!skipped
       });
+    }
+
+    // Also persist interactive details to question document if provided
+    if (codeDetails) {
+      await InterviewQuestion.findByIdAndUpdate(questionId, {
+        answer: answer || codeDetails.code || '',
+        'codingDetails.userCode': codeDetails.code,
+        'codingDetails.selectedLanguage': codeDetails.language,
+        'codingDetails.executionResults': codeDetails.executionResults
+      });
+    } else if (systemDesignDetails) {
+      await InterviewQuestion.findByIdAndUpdate(questionId, {
+        answer: answer || JSON.stringify(systemDesignDetails.designDoc || {}),
+        'systemDesignDetails.diagramNodes': systemDesignDetails.diagramNodes,
+        'systemDesignDetails.diagramConnections': systemDesignDetails.diagramConnections,
+        'systemDesignDetails.designDoc': systemDesignDetails.designDoc
+      });
+    } else if (answer) {
+      await InterviewQuestion.findByIdAndUpdate(questionId, { answer });
     }
 
     // Recalculate answeredQuestions count (exclude skipped or empty answers)

@@ -11,14 +11,24 @@ exports.buildQuestionPrompt = (user, resumeData, session, adaptiveContext = null
     difficulty,
     questionCount,
     preferredLanguage,
-    focusAreas,
-    selectedTopics,
-    hrTopics,
-    useResume,
-    useProjects,
-    useExperience,
-    questionDistribution
+    focusAreas = [],
+    selectedTopics = [],
+    hrTopics = []
   } = session;
+
+  const allTopics = [...(focusAreas || []), ...(selectedTopics || [])];
+  const allTopicsLower = allTopics.map(t => t.toLowerCase());
+
+  const hasCoding = interviewType === 'FullLoop' || allTopicsLower.some(t => 
+    t.includes('dsa') || t.includes('coding') || t.includes('array') || t.includes('string') || 
+    t.includes('tree') || t.includes('graph') || t.includes('dp') || t.includes('algorithm') || 
+    t.includes('heap') || t.includes('recursion') || t.includes('pointers') || t.includes('binary search')
+  );
+
+  const hasSystemDesign = interviewType === 'FullLoop' || allTopicsLower.some(t => 
+    t.includes('system design') || t.includes('distributed') || t.includes('caching') || 
+    t.includes('microservice') || t.includes('scalability') || t.includes('database') || t.includes('kafka')
+  );
 
   // 1. Format profile skills and resume tech tags
   const skillsList = [
@@ -44,157 +54,84 @@ exports.buildQuestionPrompt = (user, resumeData, session, adaptiveContext = null
     `- Company: ${exp.company}\n  Role: ${exp.position}\n  Details: ${exp.description}`
   ).join('\n');
 
-  // Base prompt header & instructions
-  let adaptiveInstruction = '';
-  if (difficulty === 'Adaptive' && adaptiveContext) {
-    const weakList = adaptiveContext.weakTopics || [];
-    const incorrectList = adaptiveContext.incorrectQuestions || [];
-    adaptiveInstruction = `
---- ADAPTIVE MODE ACTIVE ---
-Generate an Adaptive Interview. You MUST construct the ${questionCount} questions following this distribution:
-- 40% of the questions should target these weak topics: ${weakList.join(', ') || 'General Concepts'}
-- 40% of the questions should be variants/follow-ups of these previously incorrect questions:
-  ${incorrectList.map(q => `- ${q}`).join('\n') || 'None'}
-- 20% of the questions should be random general questions relevant to target role "${role}".
+  let specialRoundInstructions = '';
+  if (interviewType === 'FullLoop') {
+    specialRoundInstructions = `
+--- FULL-LOOP MULTI-ROUND ONSITE SIMULATION MODE ---
+You MUST structure the ${questionCount} questions into 3 progressive rounds:
+1. Round 1 (First questions): Core Technical, Architectural Concepts, & Behavioral screening questions (tagged "technical" or "behavioral").
+2. Round 2: A practical Algorithmic Coding Challenge (tagged "coding") testing data structures / problem solving with test cases.
+3. Round 3: A Distributed System Design Architecture Challenge (tagged "system_design") testing high scale, databases, and caching.
 `;
+  } else {
+    if (hasCoding) {
+      specialRoundInstructions += `
+- Include at least 1-2 interactive Algorithmic Coding Challenge question(s) (tagged "questionType": "coding") testing candidate logic and implementation with sample test cases.
+`;
+    }
+    if (hasSystemDesign) {
+      specialRoundInstructions += `
+- Include at least 1 interactive System Design Architecture Challenge question (tagged "questionType": "system_design") evaluating distributed components, APIs, and data modeling.
+`;
+    }
   }
 
-  const baseHeader = `You are an expert technical interviewer at a premium tech corporation (e.g. ${company || 'Google'}). 
+  const baseHeader = `You are an expert Principal Bar Raiser Technical Interviewer at a top tier tech company (e.g. ${company || 'Google'}). 
 Generate a personalized set of exactly ${questionCount} interview questions for a candidate.
 Target Role: "${role}"
 Experience Level: "${experienceLevel}"
 Difficulty: "${difficulty}"
 Preferred Language: "${preferredLanguage}"
 Total Questions Required: ${questionCount}
-${adaptiveInstruction}
+Selected Focus Topics: ${allTopics.join(', ') || 'Full Stack / Core Engineering'}
+${specialRoundInstructions}
 `;
 
   const outputSchemaInstruction = `
 JSON Output Format:
-You MUST return ONLY a valid JSON array of objects. Do not include markdown code block fences (like \`\`\`json) or any conversational text.
+You MUST return ONLY a valid JSON array of objects. Do not include markdown code block fences (like \`\`\`json) or conversational text.
 [
   {
     "questionNumber": 1,
-    "questionType": "technical" or "hr" or "resume", 
-    "topic": "topic name (e.g. React, Node.js, Systems, Behavioral, Projects)",
+    "questionType": "technical" | "coding" | "system_design" | "behavioral" | "project",
+    "topic": "Topic Name (e.g., Arrays, System Design, React, Kafka, Redis, Trees)",
     "difficulty": "${difficulty}",
-    "question": "Question text...",
-    "expectedAnswer": "Brief summary of key concepts required in the answer...",
-    "hints": ["Hint option 1", "Hint option 2"]
+    "question": "Question text / problem description...",
+    "expectedAnswer": "Key criteria, expected complexity or architecture points required...",
+    "hints": ["Hint 1", "Hint 2"],
+    "codingDetails": {
+      "problemId": "slug-name",
+      "functionName": "solutionFunction",
+      "starterTemplates": {
+        "javascript": "function solution(args) {\n  // Code here\n}",
+        "python": "def solution(args):\n    pass",
+        "java": "class Solution {\n    public int solution(int[] args) {\n        return 0;\n    }\n}",
+        "cpp": "#include <vector>\nusing namespace std;\nclass Solution {\npublic:\n    int solution(vector<int>& args) {\n        return 0;\n    }\n};",
+        "c": "int solution(int* args, int size) {\n    return 0;\n}"
+      },
+      "sampleTestCases": [
+        { "input": "[2, 7, 11, 15], 9", "expectedOutput": "[0, 1]", "explanation": "2 + 7 = 9" }
+      ],
+      "constraints": ["1 <= n <= 10^5"]
+    },
+    "systemDesignDetails": {
+      "overview": "Problem statement for architecture challenge...",
+      "functionalRequirements": ["Requirement 1", "Requirement 2"],
+      "nonFunctionalRequirements": ["Low latency <20ms", "99.99% Availability"],
+      "scaleEstimates": ["100M DAU", "10,000 QPS"]
+    }
   }
 ]
 `;
 
-  // Dynamic Prompt Construction based on interviewType
-  if (interviewType === 'ResumeBased') {
-    return `${baseHeader}
---- CANDIDATE RESUME DETAILS ---
-Skills: ${uniqueSkills.join(', ') || 'None provided'}
-Projects:
-${projectsList || 'No projects listed'}
-Work Experience:
-${experienceList || 'No work experience listed'}
-
---- SPECIAL INSTRUCTIONS FOR RESUME BASED MODE ---
-1. Generate interview questions strictly using the candidate's resume, projects, work experience, and listed skills.
-2. Ask project-based questions detailing their actual architectural and tool choices.
-3. Ask technology questions specifically related to projects they implemented.
-4. Do NOT ask generic technical questions or generic HR questions that are completely unrelated to their resume.
-5. Provide expected answers and 2 guidance hints per question.
-${outputSchemaInstruction}
-`;
-  }
-
-  if (interviewType === 'Technical') {
-    const topicsToUse = (selectedTopics && selectedTopics.length > 0) ? selectedTopics : (focusAreas && focusAreas.length > 0 ? focusAreas : ['Software Engineering']);
-    return `${baseHeader}
---- TARGET TECHNICAL TOPICS ---
-Topics: ${topicsToUse.join(', ')}
-
---- SPECIAL INSTRUCTIONS FOR TECHNICAL MODE ---
-1. Generate technical interview questions strictly from the chosen technical topics: ${topicsToUse.join(', ')}.
-2. Do NOT use or reference the candidate's resume context, personal projects, or work history.
-3. Focus on code optimization, system design principles, data structures, algorithms, and core domain knowledge.
-4. Distribute the questions reasonably across the selected topics.
-5. Provide expected answers and 2 guidance hints per question.
-${outputSchemaInstruction}
-`;
-  }
-
-  if (interviewType === 'HR') {
-    const topicsToUse = (hrTopics && hrTopics.length > 0) ? hrTopics : ['Communication', 'Behavioral', 'Leadership', 'Conflict Resolution'];
-    return `${baseHeader}
---- TARGET HR & BEHAVIORAL TOPICS ---
-Topics: ${topicsToUse.join(', ')}
-
---- SPECIAL INSTRUCTIONS FOR HR MODE ---
-1. Generate HR, behavioral, situational, and culture-fit questions covering: ${topicsToUse.join(', ')}.
-2. Focus on situational conflicts, leadership opportunities, team communication, and personal growth goals.
-3. Do NOT ask any coding, system architecture, syntax, or technical configuration questions.
-4. Provide expected answers (STAR method targets) and 2 guidance hints per question.
-${outputSchemaInstruction}
-`;
-  }
-
-  if (interviewType === 'Mixed') {
-    const techCount = Math.max(1, Math.round(questionCount * (questionDistribution?.technical || 60) / 100));
-    const hrCount = Math.max(1, Math.round(questionCount * (questionDistribution?.hr || 20) / 100));
-    const resumeCount = Math.max(0, questionCount - (techCount + hrCount));
-
-    const techTopics = (selectedTopics && selectedTopics.length > 0) ? selectedTopics : ['JavaScript', 'System Design'];
-    const hTopics = (hrTopics && hrTopics.length > 0) ? hrTopics : ['Behavioral', 'Communication'];
-
-    return `${baseHeader}
---- CANDIDATE RESUME DETAILS ---
-Skills: ${uniqueSkills.join(', ') || 'None'}
-Projects:
-${projectsList || 'None'}
-
---- TARGET THEMES ---
-Technical Topics: ${techTopics.join(', ')}
-HR Topics: ${hTopics.join(', ')}
-
---- SPECIAL INSTRUCTIONS FOR MIXED MODE ---
-1. Generate a total of ${questionCount} questions following this distribution split:
-   - Generate exactly ${techCount} Technical questions covering: ${techTopics.join(', ')}
-   - Generate exactly ${hrCount} HR/Behavioral questions covering: ${hTopics.join(', ')}
-   - Generate exactly ${resumeCount} Resume-based questions referencing the candidate's projects or experience.
-2. Mix the questions naturally.
-3. Provide expected answers and 2 guidance hints per question.
-${outputSchemaInstruction}
-`;
-  }
-
-  if (interviewType === 'Custom') {
-    const techTopics = selectedTopics || [];
-    const hTopics = hrTopics || [];
-    const resumeIncluded = useResume || useProjects || useExperience;
-
-    return `${baseHeader}
---- CANDIDATE RESUME DETAILS ---
-Skills: ${uniqueSkills.join(', ') || 'None'}
-Projects:
-${projectsList || 'None'}
-
---- CUSTOM DEFINED TOPICS ---
-Technical: ${techTopics.join(', ') || 'General Technical'}
-HR/Behavioral: ${hTopics.join(', ') || 'General HR'}
-Resume Reference Allowed: ${resumeIncluded ? 'Yes' : 'No'}
-
---- SPECIAL INSTRUCTIONS FOR CUSTOM MODE ---
-1. Generate exactly ${questionCount} questions.
-2. Select questions only from the manually specified technical topics (${techTopics.join(', ')}) and HR topics (${hTopics.join(', ')}).
-3. If Resume Reference is Allowed, include questions connecting these topics to the candidate's resume/projects. Otherwise, ignore resume context completely.
-4. Provide expected answers and 2 guidance hints per question.
-${outputSchemaInstruction}
-`;
-  }
-
-  // Fallback Mixed distribution if type is unknown
   return `${baseHeader}
-Skills: ${uniqueSkills.join(', ')}
-Projects: ${projectsList}
-Instructions: Generate exactly ${questionCount} questions blending Technical and behavioral elements.
+--- CANDIDATE RESUME & SKILLS ---
+Skills: ${uniqueSkills.join(', ') || 'General Engineering'}
+Projects:
+${projectsList || 'Standard Engineering Projects'}
+Work Experience:
+${experienceList || 'N/A'}
+
 ${outputSchemaInstruction}
 `;
 };

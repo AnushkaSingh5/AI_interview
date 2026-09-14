@@ -2,6 +2,8 @@ const axios = require('axios');
 const { buildQuestionPrompt } = require('./promptBuilder');
 const { validateAIResponse } = require('./responseValidator');
 const { executeWithRetry } = require('./retryHandler');
+const { getProblemForInterview, CURATED_PROBLEMS } = require('../codingProblemService');
+const { getScenarioForInterview, CURATED_SCENARIOS } = require('../systemDesignScenarioService');
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -11,106 +13,147 @@ const getFallbackQuestions = (session) => {
   const count = session.questionCount || 5;
   const difficulty = session.difficulty || 'Medium';
   const interviewType = session.interviewType || 'Technical';
-  const focusAreas = session.focusAreas || [];
+  const focusAreas = session.focusAreas || session.selectedTopics || [];
+  const focusAreasLower = focusAreas.map(f => f.toLowerCase());
 
-  console.warn(`[AI Service] Triggering fail-safe local template fallback questions for target role: "${role}"`);
-
-  const frontendPool = [
-    { question: 'Explain the difference between state and props in React.', topic: 'React', expected: 'State represents internal component memory; props are parameters passed in.', hints: ['Internal vs External', 'Read-only vs Mutable'] },
-    { question: 'What is the Event Loop in JavaScript and how does it handle async operations?', topic: 'JavaScript', expected: 'Event Loop handles concurrency by polling callback queue and pushing to stack.', hints: ['Call Stack', 'Callback Queue'] },
-    { question: 'How do you optimize page load performance of a modern React app?', topic: 'Performance', expected: 'Code splitting, lazy loading, image optimization, memoization.', hints: ['Code Splitting', 'Lazy Loading'] },
-    { question: 'Explain CSS specificity and how the cascade rules apply.', topic: 'CSS', expected: 'Inline styles, IDs, classes, elements in order of specificity weight.', hints: ['Selector Weight', 'Cascade order'] },
-    { question: 'What is semantic HTML and why is it important for SEO and accessibility?', topic: 'Accessibility', expected: 'Using elements like article, header, nav to give meaning to structure.', hints: ['HTML5 Tags', 'Screen Readers'] }
-  ];
-
-  const backendPool = [
-    { question: 'Explain database normalization and difference between 1NF, 2NF, and 3NF.', topic: 'Databases', expected: 'Structuring columns/tables to reduce redundancy and dependencies.', hints: ['Redundancy', 'Dependencies'] },
-    { question: 'How does JWT authentication work and how do you store tokens securely?', topic: 'Security', expected: 'Stateless JSON token signed by server. Stored in HttpOnly cookies.', hints: ['Stateless', 'HttpOnly Cookie'] },
-    { question: 'Explain REST API design best practices and HTTP status codes.', topic: 'APIs', expected: 'Singular/plural nouns, HTTP verbs, statelessness, clear status codes.', hints: ['Nouns vs Verbs', 'Status Codes'] },
-    { question: 'What is database indexing and how does it improve query performance?', topic: 'Databases', expected: 'B-Tree data structures pointing to rows to avoid full table scans.', hints: ['Data Structure', 'Table Scan'] },
-    { question: 'How do you handle concurrency and race conditions in a distributed system?', topic: 'System Design', expected: 'Optimistic locking, pessimistic locking, distributed locks like Redis.', hints: ['Locking', 'Redis Locks'] }
-  ];
-
-  const hrQuestions = [
-    { question: 'Tell me about yourself and your professional journey.', topic: 'Behavioral', expected: 'Clear summary of background, skills, and interest in target role.', hints: ['Keep it professional', 'Highlight key achievements'] },
-    { question: 'Describe a time when you faced a strict deadline and how you handled it.', topic: 'Behavioral', expected: 'Priority setting, task delegation, and communication of risks.', hints: ['STAR Method', 'Prioritization'] },
-    { question: 'How do you handle disagreements or conflicts within a development team?', topic: 'Behavioral', expected: 'Empathetic listening, open discussion, and focus on compromise.', hints: ['Communication', 'Collaboration'] },
-    { question: 'Why are you interested in joining our company and how do you align with our culture fit?', topic: 'Culture Fit', expected: 'Research on company mission and alignment of values.', hints: ['Company mission', 'Values match'] },
-    { question: 'Where do you see yourself in the next five years and what are your career goals?', topic: 'Career Path', expected: 'Ambitions showing desire to learn and take ownership.', hints: ['Growth mindset', 'Long term commitment'] }
-  ];
-
-  const category = (role?.toLowerCase()?.includes('front') || role?.toLowerCase()?.includes('ui') || role?.toLowerCase()?.includes('ux')) 
-    ? 'frontend' 
-    : 'backend';
-    
-  let baseTechPool = category === 'frontend' ? frontendPool : backendPool;
-
-  // Dynamically insert custom tech focus area questions
-  if (focusAreas && focusAreas.length > 0) {
-    const customTechQuestions = focusAreas.map(area => ({
-      question: `Explain core features of ${area}, how it integrates into the architecture of a ${role} application, and best practices.`,
-      topic: area,
-      expected: `Accurate architectural explanation and optimization techniques for using ${area} in a ${role} app.`,
-      hints: [`${area} best practices`, `${area} core components`, `Integration details`]
-    }));
-    baseTechPool = [...customTechQuestions, ...baseTechPool];
-  }
-
-  // Construct target question pool based on interviewType option
-  let questionPool = [];
-  if (interviewType === 'Technical') {
-    const projectQuestion = {
-      question: `In your recent projects, what was the biggest technical challenge you faced and how did you resolve it?`,
-      topic: 'Projects',
-      expected: 'Specific problem statement, engineering approach, and numerical impact.',
-      hints: ['Pick one clear challenge', 'Focus on impact metrics']
-    };
-    
-    for (let i = 0; i < count; i++) {
-      if (i === 1 || i === 4) {
-        questionPool.push({ ...projectQuestion, typeVal: 'project' });
-      } else {
-        const qRaw = baseTechPool[i % baseTechPool.length];
-        questionPool.push({ ...qRaw, typeVal: 'technical' });
-      }
-    }
-  } else if (interviewType === 'HR') {
-    for (let i = 0; i < count; i++) {
-      const qRaw = hrQuestions[i % hrQuestions.length];
-      questionPool.push({ ...qRaw, typeVal: 'hr' });
-    }
-  } else {
-    // Mixed: tech, project, and hr questions
-    for (let i = 0; i < count; i++) {
-      if (i % 3 === 0) {
-        const qRaw = baseTechPool[Math.floor(i / 3) % baseTechPool.length];
-        questionPool.push({ ...qRaw, typeVal: 'technical' });
-      } else if (i % 3 === 1) {
-        const qRaw = hrQuestions[Math.floor(i / 3) % hrQuestions.length];
-        questionPool.push({ ...qRaw, typeVal: 'hr' });
-      } else {
-        questionPool.push({
-          question: `In your recent projects, what was the biggest technical challenge you faced and how did you resolve it?`,
-          topic: 'Projects',
-          expected: 'Specific problem statement, engineering approach, and numerical impact.',
-          hints: ['Pick one clear challenge', 'Focus on impact metrics'],
-          typeVal: 'project'
-        });
-      }
-    }
-  }
+  const isFullLoop = interviewType === 'FullLoop';
+  const wantsCoding = isFullLoop || focusAreasLower.some(f => 
+    f.includes('dsa') || f.includes('coding') || f.includes('array') || f.includes('tree') || 
+    f.includes('graph') || f.includes('dp') || f.includes('algorithm') || f.includes('binary')
+  );
+  const wantsSystemDesign = isFullLoop || focusAreasLower.some(f => 
+    f.includes('system design') || f.includes('distributed') || f.includes('caching') || 
+    f.includes('microservice') || f.includes('scale')
+  );
 
   const list = [];
+  let codingProblem = getProblemForInterview({ topics: focusAreas, difficulty });
+  let systemDesignScenario = CURATED_SCENARIOS[0];
+
   for (let i = 0; i < count; i++) {
-    const rawQ = questionPool[i % questionPool.length];
+    const qNum = i + 1;
+
+    // In FullLoop or when topics matched, inject Coding & System Design
+    if (isFullLoop) {
+      if (qNum === count - 1 || (count <= 3 && qNum === 2)) {
+        // Coding Round
+        list.push({
+          questionNumber: qNum,
+          stageNumber: 2,
+          stageName: 'Live Algorithmic Coding Challenge',
+          questionType: 'coding',
+          topic: codingProblem.category || 'Algorithms & Data Structures',
+          difficulty: codingProblem.difficulty || difficulty,
+          question: codingProblem.title + ': ' + codingProblem.description,
+          expectedAnswer: 'Optimal solution with clean time and space complexity adhering to constraints.',
+          hints: codingProblem.constraints || ['Consider hash map for O(N) lookup', 'Handle boundary edge cases'],
+          codingDetails: {
+            problemId: codingProblem.problemId,
+            category: codingProblem.category,
+            functionName: 'solution',
+            starterTemplates: codingProblem.starterCode || {},
+            sampleTestCases: (codingProblem.examples || []).map(ex => ({ input: ex.input, expectedOutput: ex.output, explanation: ex.explanation })),
+            hiddenTestCases: (codingProblem.testCases || []).map(tc => ({ input: tc.input, expectedOutput: tc.expectedOutput })),
+            constraints: codingProblem.constraints || [],
+            selectedLanguage: 'javascript',
+            userCode: codingProblem.starterCode?.javascript || ''
+          }
+        });
+        continue;
+      } else if (qNum === count || (count <= 3 && qNum === 3)) {
+        // System Design Round
+        list.push({
+          questionNumber: qNum,
+          stageNumber: 3,
+          stageName: 'Distributed System Design Studio',
+          questionType: 'system_design',
+          topic: systemDesignScenario.domain || 'Distributed Architecture',
+          difficulty: systemDesignScenario.difficulty || difficulty,
+          question: systemDesignScenario.title + ': ' + systemDesignScenario.description,
+          expectedAnswer: 'High-availability distributed architecture with clear microservices, caching, and data modeling.',
+          hints: systemDesignScenario.keyArchitectureFocus || ['Design API endpoints', 'Implement multi-tier cache', 'Address failover'],
+          systemDesignDetails: {
+            problemId: systemDesignScenario.problemId,
+            domain: systemDesignScenario.domain,
+            overview: systemDesignScenario.description,
+            functionalRequirements: systemDesignScenario.functionalRequirements || [],
+            nonFunctionalRequirements: systemDesignScenario.nonFunctionalRequirements || [],
+            scaleEstimates: systemDesignScenario.scaleEstimates || [],
+            starterComponents: systemDesignScenario.starterComponents || [],
+            diagramNodes: systemDesignScenario.starterComponents || [],
+            diagramConnections: []
+          }
+        });
+        continue;
+      }
+    } else {
+      // Dynamic Question Embedding if topics requested
+      if (wantsCoding && qNum === 2) {
+        list.push({
+          questionNumber: qNum,
+          stageNumber: 1,
+          stageName: 'Technical Coding Round',
+          questionType: 'coding',
+          topic: codingProblem.category || 'Algorithms',
+          difficulty: codingProblem.difficulty || difficulty,
+          question: codingProblem.title + ': ' + codingProblem.description,
+          expectedAnswer: 'Optimal solution with clean time and space complexity.',
+          hints: codingProblem.constraints || ['Check boundary conditions'],
+          codingDetails: {
+            problemId: codingProblem.problemId,
+            category: codingProblem.category,
+            functionName: 'solution',
+            starterTemplates: codingProblem.starterCode || {},
+            sampleTestCases: (codingProblem.examples || []).map(ex => ({ input: ex.input, expectedOutput: ex.output })),
+            hiddenTestCases: (codingProblem.testCases || []).map(tc => ({ input: tc.input, expectedOutput: tc.expectedOutput })),
+            constraints: codingProblem.constraints || [],
+            selectedLanguage: 'javascript',
+            userCode: codingProblem.starterCode?.javascript || ''
+          }
+        });
+        continue;
+      }
+
+      if (wantsSystemDesign && qNum === Math.min(count, 3)) {
+        list.push({
+          questionNumber: qNum,
+          stageNumber: 1,
+          stageName: 'System Architecture Round',
+          questionType: 'system_design',
+          topic: systemDesignScenario.domain || 'System Design',
+          difficulty: systemDesignScenario.difficulty || difficulty,
+          question: systemDesignScenario.title + ': ' + systemDesignScenario.description,
+          expectedAnswer: 'Scalable architecture addressing SLAs and database models.',
+          hints: systemDesignScenario.keyArchitectureFocus || ['Define caching strategy'],
+          systemDesignDetails: {
+            problemId: systemDesignScenario.problemId,
+            domain: systemDesignScenario.domain,
+            overview: systemDesignScenario.description,
+            functionalRequirements: systemDesignScenario.functionalRequirements || [],
+            nonFunctionalRequirements: systemDesignScenario.nonFunctionalRequirements || [],
+            scaleEstimates: systemDesignScenario.scaleEstimates || [],
+            starterComponents: systemDesignScenario.starterComponents || [],
+            diagramNodes: systemDesignScenario.starterComponents || [],
+            diagramConnections: []
+          }
+        });
+        continue;
+      }
+    }
+
+    // Standard Technical / Behavioral Question
     list.push({
-      questionNumber: i + 1,
-      questionType: rawQ.typeVal,
-      topic: rawQ.topic,
-      difficulty: difficulty || 'Medium',
-      question: rawQ.question,
-      expectedAnswer: rawQ.expected,
-      hints: rawQ.hints
+      questionNumber: qNum,
+      stageNumber: 1,
+      stageName: 'Technical & Behavioral Screening',
+      questionType: i % 2 === 0 ? 'technical' : 'behavioral',
+      topic: focusAreas[i % Math.max(1, focusAreas.length)] || (i % 2 === 0 ? 'System Architecture' : 'Behavioral & Culture'),
+      difficulty: difficulty,
+      question: i % 2 === 0
+        ? `Explain the architectural design and scaling considerations of using ${focusAreas[0] || 'asynchronous queues and caching'} in a ${role} production application.`
+        : `Describe a challenging situation in your engineering projects where you had to make a difficult trade-off under strict deadlines.`,
+      expectedAnswer: 'Thorough explanation covering performance, reliability, and structured decision-making.',
+      hints: ['Structure using STAR or technical breakdown', 'Discuss trade-offs']
     });
   }
 
@@ -118,77 +161,110 @@ const getFallbackQuestions = (session) => {
 };
 
 exports.generateInterviewQuestions = async (user, resumeData, session) => {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  // 1. Fetch adaptive context if difficulty is Adaptive
-  let adaptiveContext = null;
-  if (session.difficulty === 'Adaptive') {
-    try {
-      const UserLearningProfile = require('../../models/UserLearningProfile');
-      const QuestionEvaluation = require('../../models/QuestionEvaluation');
-      
-      const profile = await UserLearningProfile.findOne({ user: user._id });
-      const lowEvals = await QuestionEvaluation.find({
-        score: { $lt: 6 }
-      }).limit(10).populate('questionId');
-
-      adaptiveContext = {
-        weakTopics: profile?.weakestTopics?.map(t => t.topic) || [],
-        incorrectQuestions: lowEvals.filter(e => e.questionId).map(e => e.questionId.question) || []
-      };
-    } catch (e) {
-      console.error('[AI Service] Failed to retrieve adaptive context:', e.message);
-    }
-  }
-
-  // 2. Build prompt
-  const prompt = buildQuestionPrompt(user, resumeData, session, adaptiveContext);
-
-  const requestFn = async (attempt) => {
-    console.log(`[AI Service] Generating questions. Attempt ${attempt}...`);
-    
-    const response = await axios.post(
-      url,
-      {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { responseMimeType: 'application/json' }
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 45000 // 45s timeout per request
-      }
-    );
-
-    const textResponse = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!textResponse) {
-      throw new Error('Gemini returned an empty candidates text body.');
-    }
-
-    // 2. Validate response JSON
-    const validation = validateAIResponse(textResponse, session.questionCount, session.difficulty);
-    if (!validation.isValid) {
-      console.warn(`[AI Service] Validation failed:`, validation.errors.join(', '));
-      throw new Error('AI response failed validation checks.');
-    }
-
-    return validation.questions;
-  };
-
-  const isRetryableError = (error) => {
-    // Retry on validation errors, timeout, or rate-limiting/server errors
-    const status = error.response?.status;
-    return !status || [429, 500, 502, 503, 504].includes(status) || error.message.includes('validation');
-  };
+  const currentApiKey = process.env.GEMINI_API_KEY || apiKey;
+  const prompt = buildQuestionPrompt(user, resumeData, session);
 
   try {
-    // Execute AI request with retry wrapping
-    const questions = await executeWithRetry(requestFn, 4, [2000, 5000, 10000, 20000], isRetryableError);
-    console.log(`[AI Service] Questions successfully generated and validated by AI.`);
-    return questions;
-  } catch (err) {
-    console.error(`[AI Service] AI generation failed after all retries. Error: ${err.message}`);
-    // Load local template questions so the setup wizard never crashes
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentApiKey}`;
+
+    const payload = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.4,
+        topK: 40,
+        topP: 0.9,
+        maxOutputTokens: 3500,
+        responseMimeType: 'application/json'
+      }
+    };
+
+    const response = await executeWithRetry(async () => {
+      return await axios.post(url, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 25000
+      });
+    }, 2, 1000);
+
+    const candidateText = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!candidateText) {
+      throw new Error('Empty response received from Gemini AI model');
+    }
+
+    let parsedQuestions = JSON.parse(candidateText.trim());
+    if (!Array.isArray(parsedQuestions)) {
+      if (parsedQuestions.questions && Array.isArray(parsedQuestions.questions)) {
+        parsedQuestions = parsedQuestions.questions;
+      } else {
+        throw new Error('Response JSON is not an array of questions');
+      }
+    }
+
+    // Hydrate interactive coding and system design details if missing
+    const enrichedQuestions = parsedQuestions.map((q, idx) => {
+      const qNum = idx + 1;
+      const qType = (q.questionType || 'technical').toLowerCase();
+
+      let stageNumber = 1;
+      let stageName = 'Technical & Behavioral Screening';
+      if (session.interviewType === 'FullLoop') {
+        if (qType === 'coding') {
+          stageNumber = 2;
+          stageName = 'Live Algorithmic Coding Challenge';
+        } else if (qType === 'system_design') {
+          stageNumber = 3;
+          stageName = 'Distributed System Design Studio';
+        }
+      }
+
+      const enriched = {
+        questionNumber: qNum,
+        stageNumber,
+        stageName,
+        questionType: qType,
+        topic: q.topic || 'Engineering',
+        difficulty: q.difficulty || session.difficulty || 'Medium',
+        question: q.question,
+        expectedAnswer: q.expectedAnswer || 'Clear technical answer required.',
+        hints: q.hints || []
+      };
+
+      if (qType === 'coding') {
+        const prob = getProblemForInterview({ topics: [q.topic], difficulty: q.difficulty || session.difficulty });
+        enriched.codingDetails = {
+          problemId: prob.problemId,
+          category: prob.category || q.topic,
+          functionName: 'solution',
+          starterTemplates: prob.starterCode || {},
+          sampleTestCases: (prob.examples || []).map(ex => ({ input: ex.input, expectedOutput: ex.output, explanation: ex.explanation })),
+          hiddenTestCases: (prob.testCases || []).map(tc => ({ input: tc.input, expectedOutput: tc.expectedOutput })),
+          constraints: prob.constraints || q.hints || [],
+          selectedLanguage: 'javascript',
+          userCode: prob.starterCode?.javascript || ''
+        };
+      }
+
+      if (qType === 'system_design') {
+        const scn = CURATED_SCENARIOS[0];
+        enriched.systemDesignDetails = {
+          problemId: scn.problemId,
+          domain: scn.domain || q.topic,
+          overview: q.question || scn.description,
+          functionalRequirements: q.systemDesignDetails?.functionalRequirements || scn.functionalRequirements || [],
+          nonFunctionalRequirements: q.systemDesignDetails?.nonFunctionalRequirements || scn.nonFunctionalRequirements || [],
+          scaleEstimates: q.systemDesignDetails?.scaleEstimates || scn.scaleEstimates || [],
+          starterComponents: scn.starterComponents || [],
+          diagramNodes: scn.starterComponents || [],
+          diagramConnections: []
+        };
+      }
+
+      return enriched;
+    });
+
+    return enrichedQuestions;
+  } catch (error) {
+    console.warn('[AI Service] Gemini question generation failed, using rich local fallback generator:', error.message);
     return getFallbackQuestions(session);
   }
 };

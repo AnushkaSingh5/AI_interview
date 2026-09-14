@@ -101,17 +101,21 @@ const executeQuestionGenerationJob = async (job) => {
     // Delete existing questions
     await InterviewQuestion.deleteMany({ sessionId: session._id });
 
-    // Store newly generated questions
+    // Store newly generated questions with stage and interactive details
     const questionDocs = generatedList.map(q => ({
       sessionId: session._id,
       user: user._id,
       questionNumber: q.questionNumber,
-      questionType: q.questionType,
+      stageNumber: q.stageNumber || 1,
+      stageName: q.stageName || 'Technical Assessment',
+      questionType: q.questionType || 'technical',
       topic: q.topic,
       difficulty: q.difficulty,
       question: q.question,
       expectedAnswer: q.expectedAnswer,
-      hints: q.hints,
+      hints: q.hints || [],
+      codingDetails: q.codingDetails || null,
+      systemDesignDetails: q.systemDesignDetails || null,
       status: 'pending'
     }));
 
@@ -348,3 +352,5 @@ exports.resumePendingJobs = async () => {
 
 exports.getQueueLength = () => queue.length;
 exports.getProcessingJob = () => processingJob;
+exports.executeEvaluationJob = executeEvaluationJob;
+exports.executeQuestionGenerationJob = executeQuestionGenerationJob;

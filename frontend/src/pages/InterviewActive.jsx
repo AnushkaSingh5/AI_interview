@@ -3,13 +3,46 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   FiClock, FiCheckSquare, FiAlertCircle, FiHelpCircle, FiChevronLeft, 
   FiChevronRight, FiCheck, FiSave, FiAlertTriangle, FiBookOpen, FiCornerDownRight,
-  FiCheckCircle, FiPlay
+  FiCheckCircle, FiPlay, FiCode, FiLayers, FiRefreshCw, FiZap, FiFileText, FiTerminal
 } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 import AIAvatarInterviewer from '../components/AIAvatarInterviewer';
 import TypewriterQuestion from '../components/TypewriterQuestion';
+import CodeEditor from '../components/CodeEditor';
+import ArchitectureCanvas from '../components/ArchitectureCanvas';
+
+const DEFAULT_STARTERS = {
+  javascript: `// Write your solution here
+function solution(input) {
+  // Your code here
+  return input;
+}`,
+  python: `# Write your solution here
+def solution(input):
+    # Your code here
+    return input
+`,
+  java: `public class Solution {
+    public static void main(String[] args) {
+        // Your code here
+    }
+}`,
+  cpp: `#include <iostream>
+using namespace std;
+
+int main() {
+    // Your code here
+    return 0;
+}`,
+  c: `#include <stdio.h>
+
+int main() {
+    // Your code here
+    return 0;
+}`
+};
 
 const InterviewActive = () => {
   const { id } = useParams();
@@ -22,13 +55,21 @@ const InterviewActive = () => {
   
   // Current active question index (0-indexed locally)
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answersMap, setAnswersMap] = useState({}); // questionId -> { answer, skipped, timeTaken }
+  const [answersMap, setAnswersMap] = useState({}); // questionId -> { answer, codeDetails, systemDesignDetails, skipped, timeTaken }
   const [isSpeakingQuestion, setIsSpeakingQuestion] = useState(false);
   
   const [loading, setLoading] = useState(true);
   const [savingDraft, setSavingDraft] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showAvatar, setShowAvatar] = useState(true);
+
+  // Coding execution states
+  const [isRunningCode, setIsRunningCode] = useState(false);
+  const [executionOutput, setExecutionOutput] = useState(null);
+  const [activeCodingTab, setActiveCodingTab] = useState('editor'); // 'editor' | 'testcases' | 'console'
+
+  // System design states
+  const [activeSdTab, setActiveSdTab] = useState('canvas'); // 'canvas' | 'doc'
 
   // Strict Lockdown & Proctoring states
   const [interviewState, setInterviewState] = useState(document.fullscreenElement ? 'INTERVIEW_ACTIVE' : 'INTERVIEW_PAUSED');
@@ -51,8 +92,6 @@ const InterviewActive = () => {
   // Timer state (seconds remaining)
   const [timeRemaining, setTimeRemaining] = useState(0);
   const timerIntervalRef = useRef(null);
-
-  // Auto-save interval ref
   const autoSaveIntervalRef = useRef(null);
 
   // Strict Interview Lockdown & Fullscreen Enforcer
@@ -242,10 +281,10 @@ const InterviewActive = () => {
           return;
         }
 
-        // If interview is already submitted, redirect to dashboard
+        // If interview is already submitted, redirect to report or dashboard
         if (['Submitted', 'AwaitingEvaluation', 'ReportGenerated', 'Completed'].includes(sess.status)) {
           toast.info('This interview has already been submitted.');
-          navigate('/dashboard');
+          navigate(`/interview/${sess.interviewId}/report`);
           return;
         }
 
@@ -257,8 +296,33 @@ const InterviewActive = () => {
         const initialMap = {};
         qList.forEach(q => {
           const match = aList.find(a => a.questionId === q._id);
+          
+          // Initial coding setup
+          const defaultLang = match?.codeDetails?.language || 'javascript';
+          const defaultCode = match?.codeDetails?.code || 
+            q.codingDetails?.starterTemplates?.[defaultLang] || 
+            q.codingDetails?.starterCode || 
+            DEFAULT_STARTERS[defaultLang] || '';
+
+          // Initial system design setup
+          const defaultDiagramNodes = match?.systemDesignDetails?.diagramNodes || q.systemDesignDetails?.starterComponents || [];
+          const defaultConnections = match?.systemDesignDetails?.connections || [];
+          const defaultDesignDoc = match?.systemDesignDetails?.designDoc || '';
+
           initialMap[q._id] = {
-            answer: match?.answer || '',
+            answer: match?.answer || (q.questionType === 'coding' ? defaultCode : ''),
+            codeDetails: {
+              language: defaultLang,
+              code: defaultCode,
+              executionResults: match?.codeDetails?.executionResults || null,
+              passedCount: match?.codeDetails?.passedCount || 0,
+              totalCount: match?.codeDetails?.totalCount || (q.codingDetails?.testCases?.length || 0)
+            },
+            systemDesignDetails: {
+              diagramNodes: defaultDiagramNodes,
+              connections: defaultConnections,
+              designDoc: defaultDesignDoc
+            },
             skipped: match?.skipped || false,
             timeTaken: match?.timeTaken || 0
           };
@@ -284,6 +348,8 @@ const InterviewActive = () => {
       const payload = {
         questionId: qId,
         answer: dataToSave.answer,
+        codeDetails: dataToSave.codeDetails,
+        systemDesignDetails: dataToSave.systemDesignDetails,
         skipped: dataToSave.skipped,
         timeTaken: dataToSave.timeTaken,
         timeRemaining,
@@ -317,9 +383,174 @@ const InterviewActive = () => {
       [activeQ._id]: {
         ...prev[activeQ._id],
         answer: text,
-        skipped: false // Reset skipped status
+        skipped: false
       }
     }));
+  };
+
+  // Coding updates
+  const handleCodeChange = (newCode) => {
+    const activeQ = questions[currentIndex];
+    if (!activeQ) return;
+
+    setAnswersMap(prev => {
+      const existing = prev[activeQ._id] || {};
+      const currentCodeDetails = existing.codeDetails || {};
+      return {
+        ...prev,
+        [activeQ._id]: {
+          ...existing,
+          answer: newCode,
+          codeDetails: {
+            ...currentCodeDetails,
+            code: newCode
+          },
+          skipped: false
+        }
+      };
+    });
+  };
+
+  const handleCodeLanguageChange = (newLang) => {
+    const activeQ = questions[currentIndex];
+    if (!activeQ) return;
+
+    const templateCode = activeQ.codingDetails?.starterTemplates?.[newLang] || DEFAULT_STARTERS[newLang] || '';
+
+    setAnswersMap(prev => {
+      const existing = prev[activeQ._id] || {};
+      const currentCodeDetails = existing.codeDetails || {};
+      return {
+        ...prev,
+        [activeQ._id]: {
+          ...existing,
+          answer: templateCode,
+          codeDetails: {
+            ...currentCodeDetails,
+            language: newLang,
+            code: templateCode
+          },
+          skipped: false
+        }
+      };
+    });
+  };
+
+  const handleResetCode = () => {
+    const activeQ = questions[currentIndex];
+    if (!activeQ) return;
+    const currentLang = answersMap[activeQ._id]?.codeDetails?.language || 'javascript';
+    const starter = activeQ.codingDetails?.starterTemplates?.[currentLang] || DEFAULT_STARTERS[currentLang] || '';
+    handleCodeChange(starter);
+    toast.info('Code reset to default starter template.');
+  };
+
+  const handleRunCode = async () => {
+    const activeQ = questions[currentIndex];
+    if (!activeQ) return;
+
+    const currentCode = answersMap[activeQ._id]?.codeDetails?.code || '';
+    const currentLang = answersMap[activeQ._id]?.codeDetails?.language || 'javascript';
+    const testCases = activeQ.codingDetails?.testCases || [];
+
+    if (!currentCode.trim()) {
+      toast.warning('Please write some code before running tests.');
+      return;
+    }
+
+    setIsRunningCode(true);
+    setActiveCodingTab('console');
+    try {
+      const payload = {
+        language: currentLang,
+        code: currentCode,
+        problemId: activeQ.codingDetails?.problemId,
+        testCases: testCases.map(tc => ({
+          input: tc.input,
+          expectedOutput: tc.expectedOutput || tc.output
+        }))
+      };
+
+      const response = await axiosInstance.post('/coding/execute', payload);
+      if (response.data && response.data.success) {
+        const result = response.data.result;
+        setExecutionOutput(result);
+
+        const passedCount = result.passedCount || 0;
+        const totalCount = result.totalCount || testCases.length || 0;
+
+        setAnswersMap(prev => {
+          const existing = prev[activeQ._id] || {};
+          return {
+            ...prev,
+            [activeQ._id]: {
+              ...existing,
+              codeDetails: {
+                ...existing.codeDetails,
+                executionResults: result,
+                passedCount,
+                totalCount
+              }
+            }
+          };
+        });
+
+        if (result.allPassed) {
+          toast.success(`All ${passedCount}/${totalCount} test cases passed!`);
+        } else {
+          toast.info(`${passedCount}/${totalCount} test cases passed.`);
+        }
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to execute code runner.');
+    } finally {
+      setIsRunningCode(false);
+    }
+  };
+
+  // System Design updates
+  const handleArchitectureCanvasChange = (nodes, connections) => {
+    const activeQ = questions[currentIndex];
+    if (!activeQ) return;
+
+    setAnswersMap(prev => {
+      const existing = prev[activeQ._id] || {};
+      const sdDetails = existing.systemDesignDetails || {};
+      return {
+        ...prev,
+        [activeQ._id]: {
+          ...existing,
+          systemDesignDetails: {
+            ...sdDetails,
+            diagramNodes: nodes,
+            connections: connections
+          },
+          skipped: false
+        }
+      };
+    });
+  };
+
+  const handleSystemDesignDocChange = (docText) => {
+    const activeQ = questions[currentIndex];
+    if (!activeQ) return;
+
+    setAnswersMap(prev => {
+      const existing = prev[activeQ._id] || {};
+      const sdDetails = existing.systemDesignDetails || {};
+      return {
+        ...prev,
+        [activeQ._id]: {
+          ...existing,
+          answer: docText,
+          systemDesignDetails: {
+            ...sdDetails,
+            designDoc: docText
+          },
+          skipped: false
+        }
+      };
+    });
   };
 
   const handleSkipQuestion = async () => {
@@ -336,11 +567,9 @@ const InterviewActive = () => {
       [activeQ._id]: updatedData
     }));
 
-    // Trigger immediate backend sync for skip
     await saveAnswerDraft(activeQ._id, updatedData);
     toast.info('Question marked as skipped.');
 
-    // Auto-advance
     if (currentIndex < questions.length - 1) {
       setCurrentIndex(prev => prev + 1);
     } else {
@@ -398,7 +627,6 @@ const InterviewActive = () => {
     setSubmitting(true);
     isSubmittingRef.current = true;
     try {
-      // Sync last draft first
       await triggerAutoSave();
 
       const response = await axiosInstance.post(`/interviews/${session._id}/submit`);
@@ -459,20 +687,20 @@ const InterviewActive = () => {
           <div className="text-center mb-4">
             <FiCheckCircle className="text-success display-3 mb-3" />
             <h2 className="fw-bold text-dark">Interview Submitted Successfully!</h2>
-            <p className="text-muted">Your mock interview answers are locked and sent to the grading queue.</p>
+            <p className="text-muted">Your mock interview answers, code submissions, and system architectures are locked.</p>
           </div>
 
           <div className="border rounded-3 p-4 mb-4 bg-light bg-opacity-50 text-center">
             <FiCheckCircle className="text-success fs-3 mb-2" />
-            <h4 className="fw-bold h6 text-dark mb-1">AI Evaluation Ready</h4>
+            <h4 className="fw-bold h6 text-dark mb-1">AI Evaluation Pipeline Ready</h4>
             <p className="text-muted mb-0" style={{ fontSize: '0.78rem' }}>
-              Your answers have been submitted. Click below to start the AI evaluation pipeline and generate your report.
+              Your responses will be evaluated across technical correctness, code efficiency, architectural scalability, and communication clarity.
             </p>
           </div>
 
           <div className="d-flex flex-column gap-2">
             <button 
-              onClick={() => navigate(`/interview/${session.interviewId}/report`)}
+              onClick={() => navigate(`/interview/${session.interviewId}/report`)} 
               className="btn btn-primary-purple w-100 py-2.5"
             >
               View Evaluation & Report
@@ -521,7 +749,7 @@ const InterviewActive = () => {
           </div>
         )}
 
-        {/* Top Header Bar with Indicators and Terminate Button */}
+        {/* Top Header Bar */}
         <div className="d-flex justify-content-between align-items-center mb-3">
           <div className="d-flex align-items-center gap-2 bg-dark px-3 py-1.5 rounded-pill border border-secondary border-opacity-40 shadow-sm" style={{ width: 'fit-content', fontSize: '0.75rem', backgroundColor: '#111827' }}>
             <span className="text-danger fw-bold d-flex align-items-center gap-1"><span className="rounded-circle bg-danger animate-pulse" style={{ width: '6px', height: '6px' }} /> LIVE</span>
@@ -536,23 +764,22 @@ const InterviewActive = () => {
             disabled={isTerminating}
             className="btn btn-sm btn-danger px-3 py-1.5 rounded-3 fw-bold d-flex align-items-center gap-1.5 shadow"
             style={{ fontSize: '0.8rem' }}
-            title="Terminate and exit mock interview"
           >
             <FiAlertCircle /> {isTerminating ? 'Terminating...' : 'Terminate Interview'}
           </button>
         </div>
 
         <div className="glass-panel p-4 bg-white mb-4" style={{ border: '1px solid var(--border-grey)' }}>
-          <h2 className="fw-bold text-dark mb-1" style={{ fontSize: '1.45rem' }}>Review Answers</h2>
-          <p className="text-muted small">Please review your draft responses before final submission. You can click on any question to modify it.</p>
+          <h2 className="fw-bold text-dark mb-1" style={{ fontSize: '1.45rem' }}>Review Answers & Submissions</h2>
+          <p className="text-muted small">Please review your draft responses, code solutions, and architecture diagrams before final submission.</p>
           
           <div className="table-responsive border rounded-3 mt-3">
             <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.86rem' }}>
               <thead className="table-light">
                 <tr>
                   <th style={{ width: '80px' }}>No.</th>
-                  <th>Question</th>
-                  <th style={{ width: '120px' }}>Type</th>
+                  <th>Question / Challenge</th>
+                  <th style={{ width: '130px' }}>Type</th>
                   <th style={{ width: '140px' }}>Status</th>
                   <th style={{ width: '100px' }} className="text-end">Action</th>
                 </tr>
@@ -560,14 +787,14 @@ const InterviewActive = () => {
               <tbody>
                 {questions.map((q, idx) => {
                   const ansData = answersMap[q._id];
-                  const hasAnswer = ansData && ansData.answer?.trim().length > 0;
+                  const hasAnswer = (ansData?.answer?.trim()?.length > 0) || (ansData?.codeDetails?.code?.trim()?.length > 0) || (ansData?.systemDesignDetails?.diagramNodes?.length > 0);
                   const isSkipped = ansData && ansData.skipped;
 
                   let statusText = 'Unanswered';
                   let statusBadge = 'bg-secondary text-secondary bg-opacity-10';
                   
                   if (hasAnswer) {
-                    statusText = 'Answered';
+                    statusText = q.questionType === 'coding' ? 'Code Submitted' : q.questionType === 'system_design' ? 'Diagram Created' : 'Answered';
                     statusBadge = 'bg-success text-success bg-opacity-10';
                   } else if (isSkipped) {
                     statusText = 'Skipped';
@@ -581,10 +808,17 @@ const InterviewActive = () => {
                         <span className="text-dark fw-semibold d-block text-truncate" style={{ maxWidth: '380px' }}>
                           {q.question}
                         </span>
+                        {q.stageName && (
+                          <span className="text-muted" style={{ fontSize: '0.7rem' }}>{q.stageName}</span>
+                        )}
                       </td>
                       <td>
-                        <span className="badge bg-primary bg-opacity-10 text-primary" style={{ textTransform: 'capitalize' }}>
-                          {q.questionType}
+                        <span className={`badge ${
+                          q.questionType === 'coding' ? 'bg-info bg-opacity-10 text-info' : 
+                          q.questionType === 'system_design' ? 'bg-primary bg-opacity-10 text-primary' : 
+                          'bg-secondary bg-opacity-10 text-secondary'
+                        }`} style={{ textTransform: 'capitalize' }}>
+                          {q.questionType === 'system_design' ? 'System Design' : q.questionType}
                         </span>
                       </td>
                       <td>
@@ -632,11 +866,13 @@ const InterviewActive = () => {
 
   // 3. ACTIVE INTERVIEW PANEL
   const activeQuestion = questions[currentIndex];
-  const currentAnswerText = answersMap[activeQuestion._id]?.answer || '';
+  const activeAns = answersMap[activeQuestion._id] || {};
+  const currentAnswerText = activeAns.answer || '';
+  const isCodingQuestion = activeQuestion.questionType === 'coding' || !!activeQuestion.codingDetails;
+  const isSystemDesignQuestion = activeQuestion.questionType === 'system_design' || !!activeQuestion.systemDesignDetails;
   
   // Calculate counts for side stats
-  const answeredCount = Object.values(answersMap).filter(a => !a.skipped && a.answer?.trim().length > 0).length;
-  const skippedCount = Object.values(answersMap).filter(a => a.skipped).length;
+  const answeredCount = Object.values(answersMap).filter(a => !a.skipped && (a.answer?.trim()?.length > 0 || a.codeDetails?.code?.trim()?.length > 0 || a.systemDesignDetails?.diagramNodes?.length > 0)).length;
 
   return (
     <div className="container py-4 text-start">
@@ -689,15 +925,37 @@ const InterviewActive = () => {
         </button>
       </div>
 
+      {/* FAANG Multi-Round Simulation Stages Bar (for FullLoop) */}
+      {session.interviewType === 'FullLoop' && (
+        <div className="glass-panel p-2.5 bg-white mb-3 shadow-sm d-flex align-items-center justify-content-between" style={{ border: '1px solid var(--border-grey)' }}>
+          <div className="d-flex align-items-center gap-2" style={{ fontSize: '0.78rem' }}>
+            <span className="fw-bold text-dark me-2">FAANG Simulation Rounds:</span>
+            {[
+              { round: 1, label: 'Round 1: Screening & Fundamentals', active: activeQuestion.stageNumber === 1 || (!activeQuestion.stageNumber && !isCodingQuestion && !isSystemDesignQuestion) },
+              { round: 2, label: 'Round 2: Live DSA Coding Challenge', active: activeQuestion.stageNumber === 2 || isCodingQuestion },
+              { round: 3, label: 'Round 3: Visual System Design Studio', active: activeQuestion.stageNumber === 3 || isSystemDesignQuestion }
+            ].map((stg, sIdx) => (
+              <span 
+                key={sIdx} 
+                className={`badge px-2.5 py-1.5 rounded-pill ${stg.active ? 'bg-primary text-white shadow-sm' : 'bg-light text-muted border'}`}
+                style={{ fontSize: '0.72rem' }}
+              >
+                {stg.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Top dashboard info header */}
-      <div className="glass-panel p-3 bg-white mb-4 d-flex justify-content-between align-items-center" style={{ border: '1px solid var(--border-grey)', fontSize: '0.84rem' }}>
+      <div className="glass-panel p-3 bg-white mb-4 d-flex justify-content-between align-items-center shadow-sm" style={{ border: '1px solid var(--border-grey)', fontSize: '0.84rem' }}>
         <div className="d-flex align-items-center gap-3 flex-grow-1 me-4">
           <strong className="text-dark flex-shrink-0">Progress:</strong>
           <div className="progress flex-grow-1" style={{ height: '8px', borderRadius: '4px', maxWidth: '300px' }}>
             <div 
               className="progress-bar" 
               role="progressbar" 
-              style={{ width: `${session.progress || 0}%`, backgroundColor: 'var(--primary-purple)' }}
+              style={{ width: `${session.progress || Math.round((answeredCount / questions.length) * 100)}%`, backgroundColor: 'var(--primary-purple)' }}
             />
           </div>
           <span className="text-muted small fw-semibold flex-shrink-0">{answeredCount} of {questions.length} Answered</span>
@@ -710,25 +968,25 @@ const InterviewActive = () => {
       </div>
 
       <div className="row g-4">
-        {/* Left Side: Question Palette (Circles only, no titles/hints exposed) */}
+        {/* Left Side: Question Palette */}
         <div className="col-md-3">
-          <div className="glass-panel p-3 bg-white mb-4" style={{ border: '1px solid var(--border-grey)' }}>
+          <div className="glass-panel p-3 bg-white mb-4 shadow-sm" style={{ border: '1px solid var(--border-grey)' }}>
             <span className="fw-bold text-dark d-block mb-3" style={{ fontSize: '0.8rem' }}>Question Palette</span>
             
             <div className="d-grid gap-2" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
               {questions.map((q, idx) => {
                 const ansData = answersMap[q._id];
-                const hasAnswer = ansData && ansData.answer?.trim().length > 0;
+                const hasAnswer = (ansData?.answer?.trim()?.length > 0) || (ansData?.codeDetails?.code?.trim()?.length > 0) || (ansData?.systemDesignDetails?.diagramNodes?.length > 0);
                 const isSkipped = ansData && ansData.skipped;
                 const isCurrent = idx === currentIndex;
 
-                let btnClass = 'bg-secondary bg-opacity-10 text-secondary border-0'; // Unanswered
+                let btnClass = 'bg-secondary bg-opacity-10 text-secondary border-0';
                 if (isCurrent) {
-                  btnClass = 'btn-outline-primary border-primary fw-bold text-primary'; // Current
+                  btnClass = 'btn-outline-primary border-primary fw-bold text-primary';
                 } else if (hasAnswer) {
-                  btnClass = 'bg-success text-success bg-opacity-10 border-0 fw-bold'; // Answered
+                  btnClass = 'bg-success text-success bg-opacity-10 border-0 fw-bold';
                 } else if (isSkipped) {
-                  btnClass = 'bg-danger text-danger bg-opacity-10 border-0 fw-bold'; // Skipped
+                  btnClass = 'bg-danger text-danger bg-opacity-10 border-0 fw-bold';
                 }
 
                 return (
@@ -736,7 +994,7 @@ const InterviewActive = () => {
                     key={idx}
                     type="button"
                     onClick={() => handleJumpToQuestion(idx)}
-                    className={`btn rounded-3 p-2 d-flex align-items-center justify-content-center transition-all ${btnClass}`}
+                    className={`btn rounded-3 p-2 d-flex flex-column align-items-center justify-content-center transition-all ${btnClass}`}
                     style={{ 
                       fontSize: '0.8rem',
                       aspectRatio: '1',
@@ -745,7 +1003,9 @@ const InterviewActive = () => {
                       color: isCurrent ? 'var(--primary-purple)' : ''
                     }}
                   >
-                    {idx + 1}
+                    <span>{idx + 1}</span>
+                    {q.questionType === 'coding' && <FiCode style={{ fontSize: '0.62rem' }} />}
+                    {q.questionType === 'system_design' && <FiLayers style={{ fontSize: '0.62rem' }} />}
                   </button>
                 );
               })}
@@ -765,7 +1025,7 @@ const InterviewActive = () => {
 
         {/* Right Side: Active Question Console Box */}
         <div className="col-md-9">
-          <div className="glass-panel p-4 bg-white d-flex flex-column justify-content-between" style={{ border: '1px solid var(--border-grey)', minHeight: '460px' }}>
+          <div className="glass-panel p-4 bg-white d-flex flex-column justify-content-between shadow-sm" style={{ border: '1px solid var(--border-grey)', minHeight: '520px' }}>
             
             <div>
               {/* Question metadata indicators */}
@@ -774,19 +1034,20 @@ const InterviewActive = () => {
                   <span className="text-muted small fw-semibold">
                     Question {currentIndex + 1} of {questions.length}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowAvatar(!showAvatar)}
-                    className={`btn btn-sm py-0.5 px-2 rounded-pill ${showAvatar ? 'btn-primary-purple text-white' : 'btn-outline-secondary'}`}
-                    style={{ fontSize: '0.68rem' }}
-                    title="Toggle AI Interviewer Avatar"
-                  >
-                    🤖 {showAvatar ? 'Hide Avatar' : 'Show AI Avatar'}
-                  </button>
+                  {!isCodingQuestion && !isSystemDesignQuestion && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAvatar(!showAvatar)}
+                      className={`btn btn-sm py-0.5 px-2 rounded-pill ${showAvatar ? 'btn-primary-purple text-white' : 'btn-outline-secondary'}`}
+                      style={{ fontSize: '0.68rem' }}
+                    >
+                      🤖 {showAvatar ? 'Hide Avatar' : 'Show AI Avatar'}
+                    </button>
+                  )}
                 </div>
                 <div className="d-flex gap-1.5" style={{ fontSize: '0.7rem' }}>
                   <span className="badge bg-primary bg-opacity-10 text-primary capitalize px-2.5 py-1">
-                    {activeQuestion.questionType}
+                    {activeQuestion.questionType === 'system_design' ? 'System Design' : activeQuestion.questionType}
                   </span>
                   <span className="badge bg-secondary bg-opacity-10 text-secondary px-2.5 py-1">
                     {activeQuestion.topic}
@@ -797,8 +1058,8 @@ const InterviewActive = () => {
                 </div>
               </div>
 
-              {/* Animated AI Interviewer Avatar Companion */}
-              {showAvatar && (
+              {/* Animated AI Interviewer Avatar Companion (for non-coding/design) */}
+              {!isCodingQuestion && !isSystemDesignQuestion && showAvatar && (
                 <div className="mb-3">
                   <AIAvatarInterviewer
                     questionText={activeQuestion.question || ''}
@@ -816,26 +1077,215 @@ const InterviewActive = () => {
 
               {/* Question card text */}
               <div className="mb-3">
-                <div className="fw-bold text-dark mb-3" style={{ fontSize: '1rem', lineHeight: '1.5' }}>
+                <div className="fw-bold text-dark mb-2" style={{ fontSize: '1.05rem', lineHeight: '1.5' }}>
                   <TypewriterQuestion
                     text={activeQuestion.question || ''}
                     isSpeaking={isSpeakingQuestion}
                   />
                 </div>
+
+                {/* Additional context for coding / system design */}
+                {isCodingQuestion && activeQuestion.codingDetails && (
+                  <div className="p-3 bg-light rounded-3 mb-3 border border-secondary-subtle" style={{ fontSize: '0.82rem' }}>
+                    {activeQuestion.codingDetails.constraints?.length > 0 && (
+                      <div className="mb-2">
+                        <strong className="text-dark d-block">Constraints:</strong>
+                        <ul className="mb-0 text-muted ps-3">
+                          {activeQuestion.codingDetails.constraints.map((c, ci) => (
+                            <li key={ci}>{c}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {activeQuestion.codingDetails.testCases?.length > 0 && (
+                      <div>
+                        <strong className="text-dark d-block mb-1">Sample Test Case:</strong>
+                        <div className="font-monospace p-2 bg-white rounded border text-muted" style={{ fontSize: '0.78rem' }}>
+                          <div><strong>Input:</strong> {activeQuestion.codingDetails.testCases[0].input}</div>
+                          <div><strong>Expected Output:</strong> {activeQuestion.codingDetails.testCases[0].expectedOutput || activeQuestion.codingDetails.testCases[0].output}</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {isSystemDesignQuestion && activeQuestion.systemDesignDetails && (
+                  <div className="p-3 bg-light rounded-3 mb-3 border border-secondary-subtle" style={{ fontSize: '0.82rem' }}>
+                    {activeQuestion.systemDesignDetails.requirements?.length > 0 && (
+                      <div className="mb-2">
+                        <strong className="text-dark d-block">Key System Requirements:</strong>
+                        <ul className="mb-0 text-muted ps-3">
+                          {activeQuestion.systemDesignDetails.requirements.map((r, ri) => (
+                            <li key={ri}>{r}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {activeQuestion.systemDesignDetails.scaleEstimates && (
+                      <div>
+                        <strong className="text-dark d-block">Scale Estimates:</strong>
+                        <span className="text-muted">{activeQuestion.systemDesignDetails.scaleEstimates}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
-              {/* Answer input area */}
-              <div className="mb-3">
-                <label className="form-label-mock">Your Answer Response</label>
-                <textarea
-                  rows="8"
-                  className="input-mock font-monospace"
-                  style={{ fontSize: '0.84rem', resize: 'vertical' }}
-                  placeholder="Type your response draft here..."
-                  value={currentAnswerText}
-                  onChange={(e) => handleLocalAnswerChange(e.target.value)}
-                />
-              </div>
+              {/* DYNAMIC ANSWER INTERFACE */}
+
+              {/* 1. CODING INTERFACE */}
+              {isCodingQuestion ? (
+                <div className="mb-3">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <div className="d-flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveCodingTab('editor')}
+                        className={`btn btn-sm py-1 px-3 rounded-pill ${activeCodingTab === 'editor' ? 'btn-primary-purple text-white' : 'btn-light border'}`}
+                        style={{ fontSize: '0.78rem' }}
+                      >
+                        <FiCode /> Code Editor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveCodingTab('console')}
+                        className={`btn btn-sm py-1 px-3 rounded-pill ${activeCodingTab === 'console' ? 'btn-primary-purple text-white' : 'btn-light border'}`}
+                        style={{ fontSize: '0.78rem' }}
+                      >
+                        <FiTerminal /> Test Execution & Output
+                      </button>
+                    </div>
+
+                    <div className="d-flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleRunCode}
+                        disabled={isRunningCode}
+                        className="btn btn-sm btn-success px-3 py-1.5 fw-bold d-flex align-items-center gap-1.5 shadow-sm"
+                        style={{ fontSize: '0.8rem' }}
+                      >
+                        {isRunningCode ? <FiRefreshCw className="spin" /> : <FiPlay />}
+                        {isRunningCode ? 'Running...' : 'Run Test Cases'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeCodingTab === 'editor' ? (
+                    <CodeEditor
+                      code={activeAns.codeDetails?.code || ''}
+                      onChange={handleCodeChange}
+                      language={activeAns.codeDetails?.language || 'javascript'}
+                      onLanguageChange={handleCodeLanguageChange}
+                      onResetCode={handleResetCode}
+                      height="440px"
+                      initialTheme="vs-dark"
+                    />
+                  ) : (
+                    <div className="border rounded-3 p-3 bg-dark text-white font-monospace" style={{ minHeight: '380px', fontSize: '0.82rem' }}>
+                      <div className="d-flex justify-content-between align-items-center border-bottom border-secondary pb-2 mb-3">
+                        <span className="text-info fw-bold d-flex align-items-center gap-1">
+                          <FiTerminal /> Execution Console
+                        </span>
+                        {activeAns.codeDetails?.passedCount !== undefined && (
+                          <span className={`badge ${activeAns.codeDetails.passedCount === activeAns.codeDetails.totalCount ? 'bg-success' : 'bg-warning text-dark'}`}>
+                            {activeAns.codeDetails.passedCount} / {activeAns.codeDetails.totalCount} Passed
+                          </span>
+                        )}
+                      </div>
+
+                      {executionOutput ? (
+                        <div>
+                          {executionOutput.compileError && (
+                            <div className="alert alert-danger p-2 font-monospace mb-3" style={{ fontSize: '0.78rem' }}>
+                              <strong>Compilation Error:</strong>
+                              <pre className="mb-0 mt-1">{executionOutput.compileError}</pre>
+                            </div>
+                          )}
+
+                          <div className="d-flex flex-column gap-2">
+                            {(executionOutput.testCaseResults || []).map((tc, idx) => (
+                              <div key={idx} className={`p-2.5 rounded border ${tc.passed ? 'border-success bg-success bg-opacity-10' : 'border-danger bg-danger bg-opacity-10'}`}>
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span className="fw-bold">Test Case {idx + 1}</span>
+                                  <span className={`badge ${tc.passed ? 'bg-success' : 'bg-danger'}`}>
+                                    {tc.passed ? 'PASSED' : 'FAILED'}
+                                  </span>
+                                </div>
+                                <div className="text-white-50 small">Input: <span className="text-white">{tc.input}</span></div>
+                                <div className="text-white-50 small">Expected: <span className="text-success">{tc.expectedOutput}</span></div>
+                                <div className="text-white-50 small">Actual: <span className={tc.passed ? 'text-success' : 'text-danger'}>{tc.actualOutput || 'None'}</span></div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-white-50 text-center py-5">
+                          Click "Run Test Cases" to execute your solution against live test cases.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : isSystemDesignQuestion ? (
+                /* 2. SYSTEM DESIGN INTERFACE */
+                <div className="mb-3">
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <div className="d-flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setActiveSdTab('canvas')}
+                        className={`btn btn-sm py-1 px-3 rounded-pill ${activeSdTab === 'canvas' ? 'btn-primary-purple text-white' : 'btn-light border'}`}
+                        style={{ fontSize: '0.78rem' }}
+                      >
+                        <FiLayers /> Architecture Canvas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSdTab('doc')}
+                        className={`btn btn-sm py-1 px-3 rounded-pill ${activeSdTab === 'doc' ? 'btn-primary-purple text-white' : 'btn-light border'}`}
+                        style={{ fontSize: '0.78rem' }}
+                      >
+                        <FiFileText /> Design Spec Document
+                      </button>
+                    </div>
+                  </div>
+
+                  {activeSdTab === 'canvas' ? (
+                    <ArchitectureCanvas
+                      initialNodes={activeAns.systemDesignDetails?.diagramNodes || []}
+                      initialConnections={activeAns.systemDesignDetails?.connections || []}
+                      onChange={handleArchitectureCanvasChange}
+                      height="500px"
+                    />
+                  ) : (
+                    <div>
+                      <label className="form-label-mock">System Architecture Specification & Rationale</label>
+                      <textarea
+                        rows="12"
+                        className="input-mock font-monospace"
+                        style={{ fontSize: '0.84rem', resize: 'vertical' }}
+                        placeholder="Explain your database schema, caching strategy, messaging queues, load balancing, and failure recovery trade-offs here..."
+                        value={activeAns.systemDesignDetails?.designDoc || ''}
+                        onChange={(e) => handleSystemDesignDocChange(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* 3. STANDARD CONCEPTUAL / BEHAVIORAL TEXTAREA */
+                <div className="mb-3">
+                  <label className="form-label-mock">Your Answer Response</label>
+                  <textarea
+                    rows="8"
+                    className="input-mock font-monospace"
+                    style={{ fontSize: '0.84rem', resize: 'vertical' }}
+                    placeholder="Type your response draft here..."
+                    value={currentAnswerText}
+                    onChange={(e) => handleLocalAnswerChange(e.target.value)}
+                  />
+                </div>
+              )}
+
             </div>
 
             {/* Navigation buttons container */}
@@ -883,7 +1333,6 @@ const InterviewActive = () => {
                   disabled={isSpeakingQuestion}
                   className="btn btn-sm btn-primary-purple py-2 px-3.5 d-flex align-items-center gap-1"
                   style={{ opacity: isSpeakingQuestion ? 0.5 : 1, cursor: isSpeakingQuestion ? 'not-allowed' : 'pointer' }}
-                  title={isSpeakingQuestion ? "Please wait for AI to finish speaking" : ""}
                 >
                   {currentIndex === questions.length - 1 ? 'Review Summary' : 'Next'} <FiChevronRight />
                 </button>
