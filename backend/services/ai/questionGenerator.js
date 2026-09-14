@@ -4,6 +4,7 @@ const { validateAIResponse } = require('./responseValidator');
 const { executeWithRetry } = require('./retryHandler');
 const { getProblemForInterview, CURATED_PROBLEMS } = require('../codingProblemService');
 const { getScenarioForInterview, CURATED_SCENARIOS } = require('../systemDesignScenarioService');
+const { getCompanyStyle } = require('../../config/companyStyles');
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -13,8 +14,60 @@ const getFallbackQuestions = (session) => {
   const count = session.questionCount || 5;
   const difficulty = session.difficulty || 'Medium';
   const interviewType = session.interviewType || 'Technical';
-  const focusAreas = session.focusAreas || session.selectedTopics || [];
+  const companyStyle = getCompanyStyle(session.company);
+  const focusAreas = session.focusAreas || session.selectedTopics || (companyStyle ? companyStyle.focusAreas : []);
   const focusAreasLower = focusAreas.map(f => f.toLowerCase());
+
+  // If company specific style is detected, inject curated questions from company template
+  if (companyStyle && companyStyle.curatedQuestions && companyStyle.curatedQuestions.length > 0) {
+    const list = [];
+    const curated = companyStyle.curatedQuestions;
+    for (let i = 0; i < count; i++) {
+      const baseQ = curated[i % curated.length];
+      const qNum = i + 1;
+      let qObj = {
+        questionNumber: qNum,
+        stageNumber: baseQ.questionType === 'coding' ? 2 : baseQ.questionType === 'system_design' ? 3 : 1,
+        stageName: `${companyStyle.name} ${baseQ.questionType === 'coding' ? 'Live Coding Round' : baseQ.questionType === 'system_design' ? 'Architecture Round' : 'Technical & Cultural Assessment'}`,
+        questionType: baseQ.questionType,
+        topic: baseQ.topic,
+        difficulty: baseQ.difficulty || difficulty,
+        question: baseQ.question,
+        expectedAnswer: baseQ.expectedAnswer,
+        hints: [`Aligned with ${companyStyle.name} hiring rubric`, 'Focus on practical examples & trade-offs']
+      };
+
+      if (baseQ.questionType === 'coding') {
+        const codingProblem = getProblemForInterview({ topics: [baseQ.topic, 'DSA'], difficulty });
+        qObj.codingDetails = {
+          problemId: codingProblem.problemId,
+          category: codingProblem.category,
+          functionName: 'solution',
+          starterTemplates: codingProblem.starterCode || {},
+          sampleTestCases: (codingProblem.examples || []).map(ex => ({ input: ex.input, expectedOutput: ex.output })),
+          hiddenTestCases: (codingProblem.testCases || []).map(tc => ({ input: tc.input, expectedOutput: tc.expectedOutput })),
+          constraints: codingProblem.constraints || [],
+          selectedLanguage: 'javascript',
+          userCode: codingProblem.starterCode?.javascript || ''
+        };
+      } else if (baseQ.questionType === 'system_design') {
+        const scenario = CURATED_SCENARIOS[0];
+        qObj.systemDesignDetails = {
+          problemId: scenario.problemId,
+          domain: scenario.domain,
+          overview: baseQ.question,
+          functionalRequirements: scenario.functionalRequirements || [],
+          nonFunctionalRequirements: scenario.nonFunctionalRequirements || [],
+          scaleEstimates: scenario.scaleEstimates || [],
+          starterComponents: scenario.starterComponents || [],
+          diagramNodes: scenario.starterComponents || [],
+          diagramConnections: []
+        };
+      }
+      list.push(qObj);
+    }
+    return list;
+  }
 
   const isFullLoop = interviewType === 'FullLoop';
   const wantsCoding = isFullLoop || focusAreasLower.some(f => 

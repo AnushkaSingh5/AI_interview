@@ -34,6 +34,63 @@ const PracticeHub = () => {
   const [startingSession, setStartingSession] = useState(false);
   const [learningProfile, setLearningProfile] = useState(null);
 
+  const companyTracks = [
+    {
+      name: 'Google',
+      tagline: 'Algorithmic Excellence & System Scale',
+      color: '#4285F4',
+      bg: 'rgba(66, 133, 244, 0.1)',
+      defaultTopic: 'Algorithms & Distributed Systems',
+      recommendedDifficulty: 'Hard',
+      highlights: ['Hard DSA & DP', 'Global Scalability', 'Googleyness']
+    },
+    {
+      name: 'Amazon',
+      tagline: '16 Leadership Principles & Bar Raiser',
+      color: '#FF9900',
+      bg: 'rgba(255, 153, 0, 0.12)',
+      defaultTopic: 'Amazon LP & Microservices',
+      recommendedDifficulty: 'Medium',
+      highlights: ['Customer Obsession', 'STAR Format', 'Low-Level Design']
+    },
+    {
+      name: 'Microsoft',
+      tagline: 'Practical Engineering & Growth Mindset',
+      color: '#00A4EF',
+      bg: 'rgba(0, 164, 239, 0.1)',
+      defaultTopic: 'Clean Code & Cloud Resilience',
+      recommendedDifficulty: 'Medium',
+      highlights: ['Data Structures', 'Azure Cloud', 'Growth Mindset']
+    },
+    {
+      name: 'Infosys',
+      tagline: 'Core CS Fundamentals & DBMS',
+      color: '#007CC3',
+      bg: 'rgba(0, 124, 195, 0.1)',
+      defaultTopic: 'OOPs & Database Queries',
+      recommendedDifficulty: 'Medium',
+      highlights: ['OOPs in Java/C++', 'SQL Joins & Indexing', 'SDLC']
+    },
+    {
+      name: 'TCS',
+      tagline: 'Ninja, Digital & Prime Tracks',
+      color: '#E82127',
+      bg: 'rgba(232, 33, 39, 0.1)',
+      defaultTopic: 'Programming Logic & SQL',
+      recommendedDifficulty: 'Medium',
+      highlights: ['C/Java/Python Logic', 'Database Integrity', 'Agile']
+    },
+    {
+      name: 'Accenture',
+      tagline: 'Enterprise Cloud & Consulting',
+      color: '#A100FF',
+      bg: 'rgba(161, 0, 255, 0.1)',
+      defaultTopic: 'Enterprise Microservices & Cloud',
+      recommendedDifficulty: 'Medium',
+      highlights: ['Full-Stack Modernization', 'REST APIs', 'Consulting Scenarios']
+    }
+  ];
+
   useEffect(() => {
     fetchHubData();
   }, []);
@@ -241,6 +298,68 @@ const PracticeHub = () => {
           </div>
         </div>
       )}
+
+      {/* Company-Specific Interview Tracks Grid */}
+      <div className="mb-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h3 className="h6 fw-bold text-dark mb-0">🏢 Company-Specific Interview Tracks</h3>
+            <p className="text-muted small mb-0">Practice question sets custom-tailored to the real interview styles of top tech companies.</p>
+          </div>
+          <span className="badge bg-primary bg-opacity-10 text-primary fw-bold">6 Curated Companies</span>
+        </div>
+
+        <div className="row g-3">
+          {companyTracks.map((c, idx) => (
+            <div className="col-md-4 col-sm-6" key={idx}>
+              <div className="glass-panel p-3 bg-white border shadow-sm h-100 d-flex flex-column justify-content-between" style={{ borderTop: `3px solid ${c.color}` }}>
+                <div>
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <span className="badge px-2 py-1 rounded fw-bold" style={{ backgroundColor: c.bg, color: c.color, fontSize: '0.74rem' }}>
+                      {c.name}
+                    </span>
+                    <span className="badge bg-light text-muted border" style={{ fontSize: '0.65rem' }}>
+                      {c.recommendedDifficulty}
+                    </span>
+                  </div>
+                  <strong className="d-block text-dark small mb-1" style={{ fontSize: '0.82rem' }}>{c.tagline}</strong>
+                  <div className="d-flex flex-wrap gap-1 mb-3">
+                    {c.highlights.map((h, i) => (
+                      <span key={i} className="badge bg-light text-secondary border px-1.5 py-0.5" style={{ fontSize: '0.64rem' }}>
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="d-flex gap-2">
+                  <button
+                    onClick={() => handleStartCustomPractice('Company', c.defaultTopic, c.name)}
+                    disabled={startingSession}
+                    className="btn btn-sm btn-outline-dark flex-grow-1 py-1.5"
+                    style={{ fontSize: '0.74rem', borderColor: c.color, color: c.color }}
+                  >
+                    Start {c.name} Set
+                  </button>
+                  <button
+                    onClick={() => {
+                      setConfigMode('Company');
+                      setConfigCompany(c.name);
+                      setConfigTopic(c.defaultTopic);
+                      setConfigDifficulty(c.recommendedDifficulty);
+                      setShowConfigModal(true);
+                    }}
+                    className="btn btn-sm btn-light border py-1.5 px-2.5 text-muted"
+                    style={{ fontSize: '0.74rem' }}
+                    title="Customize count and difficulty"
+                  >
+                    <FiSliders />
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Practice Categories Cards Grid */}
       <h3 className="h6 fw-bold text-dark mb-3">Practice Categories</h3>

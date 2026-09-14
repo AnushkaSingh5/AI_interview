@@ -1,6 +1,4 @@
-/**
- * Prompt Builder utility to construct structured AI interview generation prompts
- */
+const { getCompanyStyle } = require('../../config/companyStyles');
 
 exports.buildQuestionPrompt = (user, resumeData, session, adaptiveContext = null) => {
   const {
@@ -15,6 +13,8 @@ exports.buildQuestionPrompt = (user, resumeData, session, adaptiveContext = null
     selectedTopics = [],
     hrTopics = []
   } = session;
+
+  const companyStyle = getCompanyStyle(company);
 
   const allTopics = [...(focusAreas || []), ...(selectedTopics || [])];
   const allTopicsLower = allTopics.map(t => t.toLowerCase());
@@ -55,8 +55,26 @@ exports.buildQuestionPrompt = (user, resumeData, session, adaptiveContext = null
   ).join('\n');
 
   let specialRoundInstructions = '';
+  if (companyStyle) {
+    specialRoundInstructions += `
+--- COMPANY-SPECIFIC INTERVIEW STYLE FOR ${companyStyle.name.toUpperCase()} ---
+Tagline / Hiring Theme: "${companyStyle.tagline}"
+Technical Expectations:
+${companyStyle.technicalStyle}
+Behavioral & Cultural Expectations:
+${companyStyle.behavioralStyle}
+Evaluation Rubric Priority:
+${companyStyle.rubricHighlights.map(r => `  - ${r}`).join('\n')}
+
+Instructions for this ${companyStyle.name} interview set:
+1. Frame technical questions strictly in ${companyStyle.name}'s real-world interview style.
+2. If behavioral questions are included, strictly test candidate alignment with ${companyStyle.name}'s cultural pillars (e.g., STAR format for Amazon LP, Googleyness for Google, Growth Mindset for Microsoft, Core CS / Client consulting for Infosys/TCS/Accenture).
+3. Ensure difficulty and depth match ${companyStyle.name}'s hiring standards.
+`;
+  }
+
   if (interviewType === 'FullLoop') {
-    specialRoundInstructions = `
+    specialRoundInstructions += `
 --- FULL-LOOP MULTI-ROUND ONSITE SIMULATION MODE ---
 You MUST structure the ${questionCount} questions into 3 progressive rounds:
 1. Round 1 (First questions): Core Technical, Architectural Concepts, & Behavioral screening questions (tagged "technical" or "behavioral").
@@ -76,14 +94,15 @@ You MUST structure the ${questionCount} questions into 3 progressive rounds:
     }
   }
 
-  const baseHeader = `You are an expert Principal Bar Raiser Technical Interviewer at a top tier tech company (e.g. ${company || 'Google'}). 
-Generate a personalized set of exactly ${questionCount} interview questions for a candidate.
+  const baseHeader = `You are an expert Principal Bar Raiser Technical Interviewer at ${company ? company : 'a top tier tech company'}. 
+Generate a personalized set of exactly ${questionCount} interview questions for a candidate tailored to ${company || 'industry best practices'}.
 Target Role: "${role}"
+Target Employer: "${company || 'General Tech'}"
 Experience Level: "${experienceLevel}"
 Difficulty: "${difficulty}"
 Preferred Language: "${preferredLanguage}"
 Total Questions Required: ${questionCount}
-Selected Focus Topics: ${allTopics.join(', ') || 'Full Stack / Core Engineering'}
+Selected Focus Topics: ${allTopics.join(', ') || (companyStyle ? companyStyle.focusAreas.join(', ') : 'Full Stack / Core Engineering')}
 ${specialRoundInstructions}
 `;
 

@@ -335,6 +335,40 @@ const MockInterviews = () => {
         </div>
       </div>
 
+      {/* Featured Company-Specific Tracks */}
+      <div className="glass-panel p-3.5 bg-white shadow-sm mb-4" style={{ border: '1px solid var(--border-grey)' }}>
+        <div className="d-flex justify-content-between align-items-center mb-2.5">
+          <span className="fw-bold text-dark small d-flex align-items-center gap-1.5">
+            🏢 Target Company Interview Tracks
+          </span>
+          <span className="text-muted" style={{ fontSize: '0.72rem' }}>
+            Click to launch a mock interview tailored to company format
+          </span>
+        </div>
+        <div className="d-flex flex-wrap gap-2">
+          {[
+            { name: 'Google', color: '#4285F4', bg: 'rgba(66, 133, 244, 0.1)', desc: 'DSA & High Scale' },
+            { name: 'Amazon', color: '#FF9900', bg: 'rgba(255, 153, 0, 0.12)', desc: '16 LP & Microservices' },
+            { name: 'Microsoft', color: '#00A4EF', bg: 'rgba(0, 164, 239, 0.1)', desc: 'Practical & Azure' },
+            { name: 'Infosys', color: '#007CC3', bg: 'rgba(0, 124, 195, 0.1)', desc: 'OOPs & DBMS' },
+            { name: 'TCS', color: '#E82127', bg: 'rgba(232, 33, 39, 0.1)', desc: 'Ninja/Prime Logic' },
+            { name: 'Accenture', color: '#A100FF', bg: 'rgba(161, 0, 255, 0.1)', desc: 'Enterprise Cloud' }
+          ].map((comp, idx) => (
+            <button
+              key={idx}
+              onClick={() => navigate('/interview/create', { state: { prefillCompany: comp.name } })}
+              className="btn btn-sm btn-white-custom border rounded-3 py-1.5 px-3 d-flex align-items-center gap-2 transition-all"
+              style={{ fontSize: '0.76rem' }}
+            >
+              <span className="badge px-1.5 py-0.5 rounded fw-bold" style={{ backgroundColor: comp.bg, color: comp.color }}>
+                {comp.name}
+              </span>
+              <span className="text-muted small">{comp.desc}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Filter & Search Bar */}
       <div className="glass-panel p-4 bg-white shadow-sm mb-4" style={{ border: '1px solid var(--border-grey)' }}>
         <form onSubmit={handleApplyFilters} className="row g-3">

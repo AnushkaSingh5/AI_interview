@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   FiArrowLeft, FiArrowRight, FiCheck, FiCpu, FiAward, FiClock, 
   FiMessageSquare, FiSettings, FiCheckCircle, FiFileText, FiInfo, FiLayers, FiCode, FiZap
@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 
 const InterviewCreate = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [profile, setProfile] = useState(null);
   const [resumeData, setResumeData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +50,86 @@ const InterviewCreate = () => {
     'Career Goals', 'Strengths & Weaknesses', 'Adaptability'
   ];
 
+  const curatedCompanies = [
+    {
+      name: 'Google',
+      tagline: 'Algorithmic Excellence & Large-Scale Systems',
+      badgeColor: '#4285F4',
+      badgeBg: 'rgba(66, 133, 244, 0.1)',
+      recommendedDifficulty: 'Hard',
+      defaultRole: 'Software Engineer',
+      defaultTopics: ['DSA', 'Algorithms', 'System Design', 'Low-Level Design'],
+      defaultHr: ['Behavioral', 'Leadership'],
+      highlights: ['Hard Dynamic Programming & Graphs', 'High Scale System Design', 'Googleyness & Ambiguity']
+    },
+    {
+      name: 'Amazon',
+      tagline: '16 Leadership Principles & Bar Raiser Standards',
+      badgeColor: '#FF9900',
+      badgeBg: 'rgba(255, 153, 0, 0.12)',
+      recommendedDifficulty: 'Medium',
+      defaultRole: 'Software Development Engineer (SDE)',
+      defaultTopics: ['DSA', 'System Design', 'Low-Level Design', 'OOP'],
+      defaultHr: ['Leadership', 'Behavioral', 'Conflict Resolution'],
+      highlights: ['16 Amazon Leadership Principles', 'STAR Format with Metrics', 'LLD & Microservices']
+    },
+    {
+      name: 'Microsoft',
+      tagline: 'Practical Engineering & Growth Mindset',
+      badgeColor: '#00A4EF',
+      badgeBg: 'rgba(0, 164, 239, 0.1)',
+      recommendedDifficulty: 'Medium',
+      defaultRole: 'Software Engineer',
+      defaultTopics: ['DSA', 'Algorithms', 'System Design', 'OOP'],
+      defaultHr: ['Communication', 'Behavioral', 'Adaptability'],
+      highlights: ['Clean Code & Defensive Programming', 'Azure Cloud Resilience', 'Growth Mindset']
+    },
+    {
+      name: 'Infosys',
+      tagline: 'Core CS Fundamentals & Enterprise Software',
+      badgeColor: '#007CC3',
+      badgeBg: 'rgba(0, 124, 195, 0.1)',
+      recommendedDifficulty: 'Medium',
+      defaultRole: 'Specialist Programmer / Systems Engineer',
+      defaultTopics: ['OOP', 'DBMS', 'SQL', 'Operating Systems', 'Computer Networks'],
+      defaultHr: ['Communication', 'Career Goals', 'Adaptability'],
+      highlights: ['OOPs in Java/C++', 'Complex SQL Queries & Joins', 'SDLC & Client Consulting']
+    },
+    {
+      name: 'TCS',
+      tagline: 'Ninja, Digital & Prime Assessment',
+      badgeColor: '#E82127',
+      badgeBg: 'rgba(232, 33, 39, 0.1)',
+      recommendedDifficulty: 'Medium',
+      defaultRole: 'System Engineer (Digital / Prime Track)',
+      defaultTopics: ['DSA', 'OOP', 'DBMS', 'SQL', 'C++', 'Java'],
+      defaultHr: ['Communication', 'Behavioral', 'Adaptability'],
+      highlights: ['C/Java/Python Logic & Recursion', 'SQL Joins & Normalization', 'Agile Methodologies']
+    },
+    {
+      name: 'Accenture',
+      tagline: 'Enterprise Cloud & Consulting Innovation',
+      badgeColor: '#A100FF',
+      badgeBg: 'rgba(161, 0, 255, 0.1)',
+      recommendedDifficulty: 'Medium',
+      defaultRole: 'Associate Software Engineer',
+      defaultTopics: ['React', 'Node.js', 'System Design', 'MongoDB', 'SQL'],
+      defaultHr: ['Communication', 'Leadership', 'Conflict Resolution'],
+      highlights: ['Full-Stack & Cloud Modernization', 'REST API Architecture', 'Consulting & Situational Scenarios']
+    }
+  ];
+
+  const handleSelectCompany = (comp) => {
+    setFormData(prev => ({
+      ...prev,
+      company: comp.name,
+      role: prev.role || comp.defaultRole,
+      difficulty: comp.recommendedDifficulty || prev.difficulty,
+      selectedTopics: Array.from(new Set([...prev.selectedTopics, ...(comp.defaultTopics || [])])),
+      hrTopics: Array.from(new Set([...prev.hrTopics, ...(comp.defaultHr || [])]))
+    }));
+  };
+
   useEffect(() => {
     fetchWizardContext();
   }, []);
@@ -69,9 +150,10 @@ const InterviewCreate = () => {
           setResumeData(rData);
         }
 
-        // Pre-fill logic from profile
+        // Pre-fill logic from profile or router location state
+        const targetPassedCompany = location.state?.prefillCompany;
         const prefilledRole = userObj.targetRole || '';
-        const prefilledCompany = userObj.targetCompany || '';
+        const prefilledCompany = targetPassedCompany || userObj.targetCompany || '';
         
         let prefilledExp = '0-1 Years';
         if (userObj.experienceLevel === 'Beginner') prefilledExp = '0-1 Years';
@@ -79,11 +161,17 @@ const InterviewCreate = () => {
         else if (userObj.experienceLevel === 'Advanced') prefilledExp = '3-5 Years';
         else if (userObj.experienceLevel === 'Expert') prefilledExp = '5+ Years';
 
+        const matchedComp = curatedCompanies.find(c => c.name.toLowerCase() === prefilledCompany.toLowerCase());
+
         setFormData(prev => ({
           ...prev,
-          role: prefilledRole,
+          interviewType: targetPassedCompany ? 'CompanySpecific' : prev.interviewType,
+          role: prefilledRole || matchedComp?.defaultRole || '',
           company: prefilledCompany,
           experienceLevel: prefilledExp,
+          difficulty: matchedComp?.recommendedDifficulty || prev.difficulty,
+          selectedTopics: matchedComp ? Array.from(new Set([...prev.selectedTopics, ...(matchedComp.defaultTopics || [])])) : prev.selectedTopics,
+          hrTopics: matchedComp ? Array.from(new Set([...prev.hrTopics, ...(matchedComp.defaultHr || [])])) : prev.hrTopics,
           // Set initial defaults
           useResume: !!userObj.resumeId,
           useProjects: !!userObj.resumeId,
@@ -174,6 +262,7 @@ const InterviewCreate = () => {
 
   const hasCodingTopic = formData.selectedTopics.some(t => ['DSA', 'Algorithms', 'Python', 'Java', 'C++', 'JavaScript'].includes(t)) || formData.interviewType === 'FullLoop';
   const hasSystemDesignTopic = formData.selectedTopics.some(t => ['System Design', 'Low-Level Design'].includes(t)) || formData.interviewType === 'FullLoop';
+  const selectedCompanyTrack = curatedCompanies.find(c => c.name.toLowerCase() === formData.company?.trim().toLowerCase());
 
   if (loading) {
     return (
@@ -206,7 +295,13 @@ const InterviewCreate = () => {
               <div className="col-6">
                 <span className="text-muted d-block">Interview Type</span>
                 <strong className="text-dark">
-                  {createdSession.interviewType === 'FullLoop' ? 'Full-Loop FAANG Onsite (3 Rounds)' : createdSession.interviewType === 'ResumeBased' ? 'Resume Based' : createdSession.interviewType}
+                  {createdSession.interviewType === 'CompanySpecific'
+                    ? `Company Track: ${createdSession.company || 'Custom'}`
+                    : createdSession.interviewType === 'FullLoop'
+                    ? 'Full-Loop FAANG Onsite (3 Rounds)'
+                    : createdSession.interviewType === 'ResumeBased'
+                    ? 'Resume Based'
+                    : createdSession.interviewType}
                 </strong>
               </div>
               <div className="col-6">
@@ -332,6 +427,12 @@ const InterviewCreate = () => {
                     <div className="row g-3">
                       {[
                         { 
+                          type: 'CompanySpecific', 
+                          title: 'Company Specific', 
+                          badge: '🏢 Top Tier',
+                          desc: 'Targeted interview sets customized for Google, Amazon, Microsoft, Infosys, TCS, or Accenture interview styles.' 
+                        },
+                        { 
                           type: 'FullLoop', 
                           title: 'Full-Loop FAANG Onsite', 
                           badge: '⭐ Recommended',
@@ -396,26 +497,93 @@ const InterviewCreate = () => {
                 {/* Step 2: Job Details & Role */}
                 {currentStep === 2 && (
                   <div>
-                    <h3 className="h6 fw-bold mb-4 text-dark border-bottom pb-2">Step 2: Job details & Role</h3>
+                    <h3 className="h6 fw-bold mb-3 text-dark border-bottom pb-2">Step 2: Job Details & Role Configuration</h3>
+
+                    {/* If company is already selected, show locked confirmation card. Otherwise show selection grid. */}
+                    {selectedCompanyTrack ? (
+                      <div className="mb-4 p-3 rounded-3 bg-light bg-opacity-50 border text-start d-flex justify-content-between align-items-center flex-wrap gap-2">
+                        <div className="d-flex align-items-center gap-3">
+                          <span className="badge px-3 py-1.5 rounded fw-bold" style={{ backgroundColor: selectedCompanyTrack.badgeBg, color: selectedCompanyTrack.badgeColor, fontSize: '0.82rem' }}>
+                            🏢 {selectedCompanyTrack.name} Track Active
+                          </span>
+                          <div>
+                            <strong className="d-block text-dark small">{selectedCompanyTrack.tagline}</strong>
+                            <div className="d-flex flex-wrap gap-1 mt-1">
+                              {selectedCompanyTrack.highlights.map((h, i) => (
+                                <span key={i} className="badge bg-white text-secondary border px-1.5 py-0.5" style={{ fontSize: '0.64rem' }}>
+                                  {h}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({ ...prev, company: '', interviewType: prev.interviewType === 'CompanySpecific' ? 'Technical' : prev.interviewType }))}
+                          className="btn btn-sm btn-outline-secondary py-1 px-2.5"
+                          style={{ fontSize: '0.72rem' }}
+                        >
+                          Change Company
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mb-4">
+                        <label className="form-label-mock d-flex justify-content-between align-items-center mb-2">
+                          <span className="fw-bold">Select Target Company Track (Optional)</span>
+                          <span className="text-muted small">Auto-tunes questions & rubrics</span>
+                        </label>
+                        <div className="row g-2 mb-3">
+                          {curatedCompanies.map((c, idx) => (
+                            <div className="col-md-4 col-sm-6" key={idx}>
+                              <div
+                                onClick={() => handleSelectCompany(c)}
+                                className="border rounded-3 p-2.5 h-100 cursor-pointer text-start transition-all border-secondary-subtle bg-white"
+                                style={{ cursor: 'pointer' }}
+                              >
+                                <div className="d-flex justify-content-between align-items-center mb-1">
+                                  <span className="badge px-2 py-1 rounded fw-bold" style={{ backgroundColor: c.badgeBg, color: c.badgeColor, fontSize: '0.72rem' }}>
+                                    {c.name}
+                                  </span>
+                                  <span className="text-primary small fw-semibold" style={{ fontSize: '0.68rem' }}>Select</span>
+                                </div>
+                                <p className="text-muted mb-1.5" style={{ fontSize: '0.68rem', lineHeight: '1.3' }}>{c.tagline}</p>
+                                <div className="d-flex flex-wrap gap-1">
+                                  {c.highlights.slice(0, 2).map((h, i) => (
+                                    <span key={i} className="badge bg-light text-secondary border px-1.5 py-0.5" style={{ fontSize: '0.62rem' }}>
+                                      {h}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     <div className="row g-3">
                       <div className="col-md-6 text-start">
-                        <label className="form-label-mock">Select target role or type customize position</label>
+                        <label className="form-label-mock">Target Role</label>
                         <select 
                           className="input-mock mb-3"
                           value={formData.role}
                           onChange={(e) => setFormData(prev => ({ ...prev, role: e.target.value }))}
                         >
                           <option value="">-- Choose target role --</option>
+                          <option value="Software Engineer">Software Engineer</option>
+                          <option value="Software Development Engineer (SDE)">Software Development Engineer (SDE)</option>
+                          <option value="Specialist Programmer / Systems Engineer">Specialist Programmer / Systems Engineer</option>
+                          <option value="System Engineer (Digital / Prime Track)">System Engineer (Digital / Prime Track)</option>
+                          <option value="Associate Software Engineer">Associate Software Engineer</option>
                           <option value="Frontend Developer">Frontend Developer</option>
                           <option value="Backend Developer">Backend Developer</option>
                           <option value="Full Stack Developer">Full Stack Developer</option>
-                          <option value="Software Engineer">Software Engineer (SDE / SWE)</option>
                           <option value="Data Analyst">Data Analyst</option>
                           <option value="AI Engineer">AI Engineer</option>
                           <option value="DevOps Engineer">DevOps Engineer</option>
                         </select>
                         
-                        <label className="form-label-mock">Custom Job Role (if not listed)</label>
+                        <label className="form-label-mock">Custom Job Role (if different)</label>
                         <input 
                           type="text" 
                           placeholder="e.g. Distributed Systems Engineer, QA Architect"
@@ -426,14 +594,18 @@ const InterviewCreate = () => {
                       </div>
 
                       <div className="col-md-6 text-start">
-                        <label className="form-label-mock">Target Company (Optional)</label>
-                        <input 
-                          type="text" 
-                          placeholder="e.g. Google, Microsoft, Amazon, Meta, Uber"
-                          className="input-mock mb-3"
-                          value={formData.company}
-                          onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
-                        />
+                        {!selectedCompanyTrack && (
+                          <div className="mb-3">
+                            <label className="form-label-mock">Target Company</label>
+                            <input 
+                              type="text" 
+                              placeholder="e.g. Google, Amazon, Microsoft, Infosys, TCS, Accenture"
+                              className="input-mock"
+                              value={formData.company}
+                              onChange={(e) => setFormData(prev => ({ ...prev, company: e.target.value }))}
+                            />
+                          </div>
+                        )}
 
                         <label className="form-label-mock">Experience Level</label>
                         <select 
@@ -447,9 +619,7 @@ const InterviewCreate = () => {
                           <option value="3-5 Years">3-5 Years</option>
                           <option value="5+ Years">5+ Years</option>
                         </select>
-                      </div>
 
-                      <div className="col-md-6 text-start">
                         <label className="form-label-mock">Difficulty</label>
                         <select 
                           className="input-mock"
@@ -484,11 +654,13 @@ const InterviewCreate = () => {
                   <div>
                     <h3 className="h6 fw-bold mb-3 text-dark border-bottom pb-2">Step 3: Topics & Source Setup</h3>
                     
-                    {/* Full Loop / Technical / Custom Topics Selection */}
-                    {(formData.interviewType === 'FullLoop' || formData.interviewType === 'Technical' || formData.interviewType === 'Custom' || formData.interviewType === 'Mixed') && (
+                    {/* Full Loop / Company Specific / Technical / Custom Topics Selection */}
+                    {(formData.interviewType === 'FullLoop' || formData.interviewType === 'CompanySpecific' || formData.interviewType === 'Technical' || formData.interviewType === 'Custom' || formData.interviewType === 'Mixed') && (
                       <div className="mb-4">
                         <div className="d-flex justify-content-between align-items-center mb-2">
-                          <p className="text-muted small mb-0">Select technical topics and interactive challenge domains.</p>
+                          <p className="text-muted small mb-0">
+                            {formData.company ? `Select technical topics tailored for ${formData.company}:` : 'Select technical topics and interactive challenge domains.'}
+                          </p>
                           <span className="text-primary small fw-bold" style={{ fontSize: '0.72rem' }}>
                             {formData.selectedTopics.length} Selected
                           </span>
@@ -517,9 +689,11 @@ const InterviewCreate = () => {
                     )}
 
                     {/* HR Topics Selection */}
-                    {(formData.interviewType === 'FullLoop' || formData.interviewType === 'HR' || formData.interviewType === 'Custom' || formData.interviewType === 'Mixed') && (
+                    {(formData.interviewType === 'FullLoop' || formData.interviewType === 'CompanySpecific' || formData.interviewType === 'HR' || formData.interviewType === 'Custom' || formData.interviewType === 'Mixed') && (
                       <div className="mb-4">
-                        <p className="text-muted small mb-2">Select behavioral and communication topics for HR rounds:</p>
+                        <p className="text-muted small mb-2">
+                          {formData.company === 'Amazon' ? 'Amazon Leadership Principles & Behavioral domains:' : formData.company ? `${formData.company} Culture & Behavioral domains:` : 'Select behavioral and communication topics for HR rounds:'}
+                        </p>
                         <div className="d-flex flex-wrap gap-2 mb-3">
                           {hrTopicsPool.map((topic, idx) => {
                             const isSelected = formData.hrTopics.includes(topic);
@@ -663,7 +837,13 @@ const InterviewCreate = () => {
                         <div className="col-md-6">
                           <span className="text-muted d-block">Interview Type</span>
                           <strong className="text-dark">
-                            {formData.interviewType === 'FullLoop' ? 'Full-Loop FAANG Onsite (3 Rounds)' : formData.interviewType === 'ResumeBased' ? 'Resume Based' : formData.interviewType}
+                            {formData.interviewType === 'CompanySpecific'
+                              ? `Company Track: ${formData.company || 'Custom'}`
+                              : formData.interviewType === 'FullLoop'
+                              ? 'Full-Loop FAANG Onsite (3 Rounds)'
+                              : formData.interviewType === 'ResumeBased'
+                              ? 'Resume Based'
+                              : formData.interviewType}
                           </strong>
                         </div>
                         <div className="col-md-6">

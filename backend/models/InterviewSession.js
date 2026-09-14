@@ -18,7 +18,7 @@ const InterviewSessionSchema = new mongoose.Schema({
   interviewType: {
     type: String,
     required: true,
-    enum: ['Technical', 'HR', 'Mixed', 'ResumeBased', 'Custom', 'FullLoop']
+    enum: ['Technical', 'HR', 'Mixed', 'ResumeBased', 'Custom', 'FullLoop', 'CompanySpecific']
   },
   role: {
     type: String,

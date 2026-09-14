@@ -8,6 +8,8 @@ const User = require('../models/User');
 const aiService = require('../services/aiService');
 const { parseGeminiJson } = require('../utils/parseGeminiJson');
 
+const { getAllCompanyProfiles, getCompanyStyle } = require('../config/companyStyles');
+
 // @desc    Get available practice topics & weak skills
 // @route   GET /api/practice/topics
 // @access  Private
@@ -43,14 +45,16 @@ exports.getTopics = async (req, res, next) => {
 
     const standardTechnical = ['JavaScript', 'React', 'Node.js', 'Express', 'MongoDB', 'DBMS', 'Operating Systems', 'Computer Networks', 'System Design', 'Data Structures'];
     const standardSoft = ['Tell Me About Yourself', 'Strengths & Weaknesses', 'Conflict Resolution', 'Leadership', 'Handling Pressure', 'STAR Method Teamwork'];
-    const standardCompanies = ['Google', 'Amazon', 'Microsoft', 'Adobe', 'Infosys', 'TCS', 'Accenture', 'Flipkart'];
+    const standardCompanies = ['Google', 'Amazon', 'Microsoft', 'Infosys', 'TCS', 'Accenture'];
+    const companyProfiles = getAllCompanyProfiles();
 
     res.status(200).json({
       success: true,
       weakTopics,
       technicalTopics: standardTechnical,
       softTopics: standardSoft,
-      companies: standardCompanies
+      companies: standardCompanies,
+      companyProfiles
     });
   } catch (error) {
     next(error);
@@ -93,11 +97,22 @@ exports.startPracticeSession = async (req, res, next) => {
 
     // Fallback template questions if AI fails
     if (!generatedQuestions || generatedQuestions.length === 0) {
-      for (let i = 1; i <= questionCount; i++) {
-        generatedQuestions.push({
-          question: `Explain core concept #${i} regarding ${topic} in the context of ${mode} interview preparation.`,
-          expectedAnswer: `Expected key principles, architectural patterns, and practical trade-offs of ${topic}.`
-        });
+      const companyStyle = getCompanyStyle(company);
+      if (companyStyle && companyStyle.curatedQuestions && companyStyle.curatedQuestions.length > 0) {
+        for (let i = 0; i < questionCount; i++) {
+          const item = companyStyle.curatedQuestions[i % companyStyle.curatedQuestions.length];
+          generatedQuestions.push({
+            question: item.question,
+            expectedAnswer: item.expectedAnswer
+          });
+        }
+      } else {
+        for (let i = 1; i <= questionCount; i++) {
+          generatedQuestions.push({
+            question: `Explain core concept #${i} regarding ${topic} in the context of ${company || mode} interview preparation.`,
+            expectedAnswer: `Expected key principles, architectural patterns, and practical trade-offs of ${topic}.`
+          });
+        }
       }
     }
 
