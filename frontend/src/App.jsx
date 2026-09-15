@@ -48,6 +48,7 @@ import SystemDesignReport from './pages/SystemDesignReport';
 import Leaderboard from './pages/Leaderboard';
 import InterviewScheduler from './pages/InterviewScheduler';
 import CoverLetterGenerator from './pages/CoverLetterGenerator';
+import CareerCoach from './pages/CareerCoach';
 
 function App() {
   return (
@@ -102,6 +103,7 @@ function App() {
               <Route path="/resume/preview" element={<ResumePreview />} />
               <Route path="/resume/review" element={<ResumeReview />} />
               <Route path="/cover-letter" element={<CoverLetterGenerator />} />
+              <Route path="/career-coach" element={<CareerCoach />} />
               <Route path="/resume/data" element={<ExtractedDataEditor />} />
               <Route path="/interview/create" element={<InterviewCreate />} />
               <Route path="/interview/:id/questions" element={<InterviewQuestionsReview />} />

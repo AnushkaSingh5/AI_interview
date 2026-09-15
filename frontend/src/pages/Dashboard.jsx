@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   FiPlay, FiChevronDown, FiCalendar, FiUser, FiUploadCloud, FiCamera,
   FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink,
-  FiBookOpen, FiClock, FiGrid, FiZap, FiCode, FiAward
+  FiBookOpen, FiClock, FiGrid, FiZap, FiCode, FiAward, FiCompass
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -240,6 +240,13 @@ const Dashboard = () => {
           >
             <FiAward style={{ color: 'var(--primary-purple)' }} />
             <span>Leaderboard & XP</span>
+          </Link>
+          <Link
+            to="/career-coach"
+            className="btn btn-outline-dark d-flex align-items-center gap-2 py-2.5 px-3.5 shadow-sm rounded-pill bg-white"
+          >
+            <FiCompass style={{ color: '#6366f1' }} />
+            <span>AI Career Coach</span>
           </Link>
           <Link
             to="/coding-interview/create"
