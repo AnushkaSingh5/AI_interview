@@ -25,6 +25,8 @@ const Dashboard = () => {
   const [analytics, setAnalytics] = useState(null);
   const [videoHistory, setVideoHistory] = useState([]);
   const [learningProfile, setLearningProfile] = useState(null);
+  const [scheduledInterviews, setScheduledInterviews] = useState([]);
+  const [scheduledAlerts, setScheduledAlerts] = useState([]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -88,6 +90,19 @@ const Dashboard = () => {
         }
       } catch (e) {
         console.warn('Video history fetch failed:', e.message);
+      }
+
+      try {
+        const schedRes = await axiosInstance.get('/scheduler?filter=upcoming');
+        if (schedRes.data && schedRes.data.success) {
+          setScheduledInterviews(schedRes.data.interviews || []);
+        }
+        const alertRes = await axiosInstance.get('/scheduler/upcoming');
+        if (alertRes.data && alertRes.data.success) {
+          setScheduledAlerts(alertRes.data.alerts || []);
+        }
+      } catch (e) {
+        console.warn('Scheduler data fetch failed:', e.message);
       }
     } catch (error) {
       console.error('Error fetching dashboard details:', error);
@@ -211,7 +226,14 @@ const Dashboard = () => {
           <span className="fw-semibold text-muted">Welcome back, {profile?.fullName?.split(' ')[0] || profile?.name?.split(' ')[0]}! 👋</span>
         </div>
         
-        <div className="d-flex align-items-center gap-2">
+        <div className="d-flex align-items-center gap-2 flex-wrap">
+          <Link
+            to="/scheduler"
+            className="btn btn-outline-dark d-flex align-items-center gap-2 py-2.5 px-3.5 shadow-sm rounded-pill bg-white"
+          >
+            <FiCalendar style={{ color: 'var(--primary-purple)' }} />
+            <span>Scheduler</span>
+          </Link>
           <Link
             to="/leaderboard"
             className="btn btn-outline-dark d-flex align-items-center gap-2 py-2.5 px-3.5 shadow-sm rounded-pill bg-white"
@@ -515,6 +537,81 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Upcoming Scheduled Mock Interviews Widget */}
+      <div className="glass-panel p-4 bg-white mb-5 text-start animate-fade-in" style={{ border: '1px solid var(--border-grey)' }}>
+        <div className="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+          <div className="d-flex align-items-center gap-2">
+            <span className="p-2 rounded-circle" style={{ backgroundColor: '#f5f3ff', color: 'var(--primary-purple)' }}>
+              <FiCalendar style={{ fontSize: '1.2rem', strokeWidth: '2.5px' }} />
+            </span>
+            <div>
+              <h4 className="h5 fw-bold text-dark mb-0.5">Upcoming Scheduled Interviews</h4>
+              <p className="text-muted small mb-0">Plan your mock interview roadmap and sync reminders with your calendar.</p>
+            </div>
+          </div>
+          <div className="d-flex align-items-center gap-2">
+            <Link to="/scheduler" className="btn btn-sm btn-outline-secondary rounded-pill px-3" style={{ fontSize: '0.74rem' }}>
+              View Full Calendar
+            </Link>
+            <Link to="/scheduler" className="btn btn-sm btn-primary-purple rounded-pill px-3" style={{ fontSize: '0.74rem' }}>
+              + Schedule New
+            </Link>
+          </div>
+        </div>
+
+        {scheduledInterviews.length === 0 ? (
+          <div className="p-4 text-center rounded-3 bg-light bg-opacity-50">
+            <p className="text-muted small mb-3">No upcoming interviews scheduled for today or this week.</p>
+            <Link to="/scheduler" className="btn btn-sm btn-outline-dark rounded-pill px-4">
+              Schedule Your Next Practice Session
+            </Link>
+          </div>
+        ) : (
+          <div className="row g-3">
+            {scheduledInterviews.slice(0, 3).map((item) => (
+              <div key={item._id} className="col-md-4">
+                <div className="p-3 border rounded-3 bg-light bg-opacity-30 h-100 d-flex flex-column justify-content-between">
+                  <div>
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <span className="badge bg-white text-dark border small" style={{ fontSize: '0.68rem' }}>
+                        {item.track.toUpperCase()}
+                      </span>
+                      <span className="badge bg-primary text-white small" style={{ fontSize: '0.68rem' }}>
+                        {new Date(item.scheduledDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                    <strong className="text-dark d-block mb-1 text-truncate" style={{ fontSize: '0.86rem' }}>
+                      {item.title}
+                    </strong>
+                    <div className="text-muted small mb-2" style={{ fontSize: '0.72rem' }}>
+                      {new Date(item.scheduledDate).toLocaleDateString([], { month: 'short', day: 'numeric' })} • {item.durationMinutes} mins • {item.difficulty}
+                    </div>
+                  </div>
+                  <div className="d-flex justify-content-between align-items-center pt-2 border-top">
+                    <a
+                      href={item.googleCalendarUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-primary small text-decoration-none"
+                      style={{ fontSize: '0.72rem' }}
+                    >
+                      <FiExternalLink /> Google Cal
+                    </a>
+                    <Link
+                      to="/scheduler"
+                      className="btn btn-xs btn-primary-purple rounded-pill px-2.5 py-1"
+                      style={{ fontSize: '0.72rem' }}
+                    >
+                      <FiPlay /> Launch
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Video Performance Widget */}
       <div className="glass-panel p-4 bg-white mb-5 text-start animate-fade-in" style={{ border: '1px solid var(--border-grey)' }}>

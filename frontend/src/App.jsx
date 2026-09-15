@@ -46,6 +46,7 @@ import SystemDesignCreate from './pages/SystemDesignCreate';
 import SystemDesignSession from './pages/SystemDesignSession';
 import SystemDesignReport from './pages/SystemDesignReport';
 import Leaderboard from './pages/Leaderboard';
+import InterviewScheduler from './pages/InterviewScheduler';
 
 function App() {
   return (
@@ -91,6 +92,7 @@ function App() {
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/mock-interviews" element={<MockInterviews />} />
+              <Route path="/scheduler" element={<InterviewScheduler />} />
               <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/performance" element={<PerformanceDashboard />} />
               <Route path="/interviews/history" element={<InterviewHistory />} />

@@ -1,18 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiBell, FiSearch, FiMenu, FiSun, FiMoon } from 'react-icons/fi';
+import { FiBell, FiSearch, FiMenu, FiSun, FiMoon, FiCalendar, FiClock } from 'react-icons/fi';
 import defaultAvatar from '../assets/avatar.png';
+import axiosInstance from '../api/axiosInstance';
 
 const HeaderBar = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(3);
-  const [notificationsList, setNotificationsList] = useState([
-    { id: 1, type: 'grade', text: 'Mixed Interview - SDE graded successfully.', score: '83%', time: '10 mins ago', read: false },
-    { id: 2, type: 'mic', text: 'Voice hardware calibrated successfully.', time: '2 hours ago', read: false },
-    { id: 3, type: 'practice', text: 'New Daily Challenge "Implement LRU Cache" is live.', time: '5 hours ago', read: false }
-  ]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsList, setNotificationsList] = useState([]);
+  const [upcomingAlerts, setUpcomingAlerts] = useState([]);
 
   const dropdownRef = useRef(null);
 
@@ -36,6 +36,48 @@ const HeaderBar = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Fetch scheduler alerts and notifications
+  useEffect(() => {
+    fetchAlertsAndNotifications();
+    const interval = setInterval(fetchAlertsAndNotifications, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchAlertsAndNotifications = async () => {
+    try {
+      const res = await axiosInstance.get('/scheduler/upcoming');
+      const alerts = (res.data && res.data.alerts) || [];
+      setUpcomingAlerts(alerts);
+
+      const dynamicList = [];
+
+      // Add active upcoming alerts to top of notification feed
+      alerts.forEach((alert, idx) => {
+        dynamicList.push({
+          id: `sched-${alert.id || idx}`,
+          type: 'calendar',
+          text: alert.message,
+          actionLink: '/scheduler',
+          isUrgent: alert.level === 'urgent' || alert.level === 'warning',
+          time: new Date(alert.scheduledDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          read: false
+        });
+      });
+
+      // Default system items
+      dynamicList.push(
+        { id: 'sys-1', type: 'grade', text: 'Mixed Interview - SDE graded successfully.', score: '83%', time: '10 mins ago', read: false },
+        { id: 'sys-2', type: 'mic', text: 'Voice hardware calibrated successfully.', time: '2 hours ago', read: false },
+        { id: 'sys-3', type: 'practice', text: 'New Daily Challenge "Implement LRU Cache" is live.', time: '5 hours ago', read: false }
+      );
+
+      setNotificationsList(dynamicList);
+      setUnreadCount(dynamicList.filter(n => !n.read).length);
+    } catch (e) {
+      console.warn('HeaderBar alerts fetch error:', e.message);
+    }
+  };
+
   const toggleTheme = () => {
     setTheme(prev => prev === 'light' ? 'dark' : 'light');
   };
@@ -53,6 +95,13 @@ const HeaderBar = () => {
     e.stopPropagation();
     setNotificationsList(prev => prev.filter(n => n.id !== notifId));
     setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const handleNotificationClick = (notif) => {
+    if (notif.actionLink) {
+      navigate(notif.actionLink);
+      setShowNotifications(false);
+    }
   };
 
   return (
@@ -79,8 +128,26 @@ const HeaderBar = () => {
         </div>
       </div>
 
-      {/* Right side: Notification and user avatar with details */}
-      <div className="top-header-icons">
+      {/* Right side: Notification, upcoming pills, and user avatar with details */}
+      <div className="top-header-icons d-flex align-items-center gap-2">
+        {/* Upcoming Interview Quick Pill */}
+        {upcomingAlerts.length > 0 && (
+          <button
+            onClick={() => navigate('/scheduler')}
+            className="btn btn-xs d-none d-md-flex align-items-center gap-1.5 rounded-pill px-3 py-1.5 border shadow-xs animate-pulse"
+            style={{ 
+              backgroundColor: upcomingAlerts[0].level === 'urgent' ? '#fee2e2' : '#fef3c7',
+              borderColor: upcomingAlerts[0].level === 'urgent' ? '#fca5a5' : '#fde68a',
+              color: upcomingAlerts[0].level === 'urgent' ? '#991b1b' : '#92400e',
+              fontSize: '0.74rem'
+            }}
+            title="View Scheduled Interview"
+          >
+            <FiClock />
+            <span className="fw-bold">{upcomingAlerts[0].message}</span>
+          </button>
+        )}
+
         {/* Dark Mode Toggle */}
         <button 
           onClick={toggleTheme}
@@ -113,10 +180,10 @@ const HeaderBar = () => {
           {showNotifications && (
             <div 
               className="glass-panel position-absolute end-0 mt-2 bg-white border shadow-lg rounded-3 p-3 text-start"
-              style={{ width: '320px', zIndex: 1050, border: '1px solid var(--border-grey)' }}
+              style={{ width: '330px', zIndex: 1050, border: '1px solid var(--border-grey)' }}
             >
               <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
-                <strong className="text-dark small">Notifications</strong>
+                <strong className="text-dark small">Notifications & Reminders</strong>
                 {unreadCount > 0 && (
                   <button 
                     onClick={handleMarkAllRead} 
@@ -133,19 +200,29 @@ const HeaderBar = () => {
                   No new notifications.
                 </div>
               ) : (
-                <div className="d-flex flex-column gap-2" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                <div className="d-flex flex-column gap-2" style={{ maxHeight: '280px', overflowY: 'auto' }}>
                   {notificationsList.map((notif) => (
                     <div 
                       key={notif.id} 
-                      className={`p-2.5 rounded-3 border d-flex justify-content-between align-items-start gap-2 ${notif.read ? 'bg-light opacity-75' : 'bg-white'}`}
-                      style={{ fontSize: '0.76rem' }}
+                      onClick={() => handleNotificationClick(notif)}
+                      className={`p-2.5 rounded-3 border d-flex justify-content-between align-items-start gap-2 cursor-pointer transition-all ${
+                        notif.isUrgent 
+                          ? 'bg-danger bg-opacity-10 border-danger border-opacity-30' 
+                          : notif.type === 'calendar'
+                          ? 'bg-warning bg-opacity-10 border-warning border-opacity-30'
+                          : notif.read 
+                          ? 'bg-light opacity-75' 
+                          : 'bg-white'
+                      }`}
+                      style={{ fontSize: '0.76rem', cursor: notif.actionLink ? 'pointer' : 'default' }}
                     >
                       <div>
                         <p className="text-dark mb-0.5" style={{ lineHeight: '1.4' }}>
+                          {notif.type === 'calendar' && '📅 '}
                           {notif.type === 'grade' && '📝 '}
                           {notif.type === 'mic' && '🎙️ '}
                           {notif.type === 'practice' && '🚀 '}
-                          {notif.text}
+                          <strong>{notif.text}</strong>
                           {notif.score && <strong className="text-primary ms-1">{notif.score}</strong>}
                         </p>
                         <span className="text-muted" style={{ fontSize: '0.66rem' }}>{notif.time}</span>
@@ -160,6 +237,16 @@ const HeaderBar = () => {
                   ))}
                 </div>
               )}
+
+              <div className="pt-2 mt-2 border-top text-center">
+                <button 
+                  onClick={() => { navigate('/scheduler'); setShowNotifications(false); }}
+                  className="btn btn-xs btn-link text-primary text-decoration-none p-0 fw-semibold"
+                  style={{ fontSize: '0.74rem' }}
+                >
+                  Open Interview Scheduler →
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -174,10 +261,10 @@ const HeaderBar = () => {
           />
           <div className="d-flex flex-column text-start" style={{ lineHeight: '1.2' }}>
             <span className="header-username" style={{ fontSize: '0.86rem', color: '#1f2937' }}>
-              {user?.fullName || user?.name || 'Anushka Singh'}
+              {user?.fullName || user?.name || 'Candidate'}
             </span>
             <span className="text-muted" style={{ fontSize: '0.72rem' }}>
-              {user?.email || 'anushka@example.com'}
+              {user?.email || 'user@example.com'}
             </span>
           </div>
         </div>
