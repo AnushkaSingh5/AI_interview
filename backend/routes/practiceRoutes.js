@@ -7,6 +7,9 @@ const {
   getPracticeSession,
   getDailyChallenge,
   getLearningRoadmap,
+  regenerateLearningRoadmap,
+  toggleRoadmapWeek,
+  toggleRoadmapSubtask,
   getFlashcards,
   getBookmarks,
   addBookmark,
@@ -22,6 +25,9 @@ router.post('/answer', protect, evaluatePracticeAnswer);
 router.get('/session/:id', protect, getPracticeSession);
 router.get('/daily', protect, getDailyChallenge);
 router.get('/roadmap', protect, getLearningRoadmap);
+router.post('/roadmap/regenerate', protect, regenerateLearningRoadmap);
+router.patch('/roadmap/toggle-week/:weekNumber', protect, toggleRoadmapWeek);
+router.patch('/roadmap/toggle-subtask', protect, toggleRoadmapSubtask);
 router.get('/flashcards', protect, getFlashcards);
 router.get('/bookmarks', protect, getBookmarks);
 router.post('/bookmark', protect, addBookmark);

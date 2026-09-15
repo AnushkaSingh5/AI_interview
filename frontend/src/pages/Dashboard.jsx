@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { 
   FiPlay, FiChevronDown, FiCalendar, FiUser, FiUploadCloud, FiCamera,
   FiFileText, FiEdit3, FiCheck, FiX, FiActivity, FiRefreshCw, FiExternalLink,
-  FiBookOpen, FiClock, FiGrid, FiZap, FiCode
+  FiBookOpen, FiClock, FiGrid, FiZap, FiCode, FiAward
 } from 'react-icons/fi';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
@@ -213,6 +213,13 @@ const Dashboard = () => {
         
         <div className="d-flex align-items-center gap-2">
           <Link
+            to="/leaderboard"
+            className="btn btn-outline-dark d-flex align-items-center gap-2 py-2.5 px-3.5 shadow-sm rounded-pill bg-white"
+          >
+            <FiAward style={{ color: 'var(--primary-purple)' }} />
+            <span>Leaderboard & XP</span>
+          </Link>
+          <Link
             to="/coding-interview/create"
             className="btn btn-dark d-flex align-items-center gap-2 py-2.5 px-4 shadow-sm text-white rounded-pill"
           >
@@ -412,6 +419,15 @@ const Dashboard = () => {
                       <FiUploadCloud /> Upload
                     </Link>
                   )}
+                </div>
+                <div className="col-12">
+                  <Link 
+                    to="/resume/review" 
+                    className="btn btn-sm btn-primary-purple w-100 py-1.5 d-flex align-items-center justify-content-center gap-1.5 shadow-sm text-white" 
+                    style={{ fontSize: '0.76rem' }}
+                  >
+                    <FiFileText /> AI Resume Review & ATS
+                  </Link>
                 </div>
                 <div className="col-12">
                   <button 

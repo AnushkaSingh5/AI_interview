@@ -419,6 +419,13 @@ const PerformanceDashboard = () => {
                   </div>
                 )}
               </div>
+
+              <div className="mt-3 pt-2 text-end">
+                <Link to="/practice" className="btn btn-outline-primary btn-sm d-inline-flex align-items-center gap-1.5" style={{ fontSize: '0.78rem' }}>
+                  <span>Open 4-Week AI Roadmap & Practice</span>
+                  <FiArrowRight />
+                </Link>
+              </div>
             </div>
           </div>
 

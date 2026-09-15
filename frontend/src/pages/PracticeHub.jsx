@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   FiBookOpen, FiZap, FiAward, FiBookmark, FiLayers, FiPlay, FiRefreshCw,
-  FiCheckCircle, FiClock, FiStar, FiTrash2, FiChevronRight, FiSliders, FiFileText, FiTarget
+  FiCheckCircle, FiClock, FiStar, FiTrash2, FiChevronRight, FiSliders, FiFileText, FiTarget,
+  FiCheckSquare, FiSquare
 } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
@@ -14,6 +15,7 @@ const PracticeHub = () => {
   const [topicsData, setTopicsData] = useState(null);
   const [stats, setStats] = useState(null);
   const [roadmap, setRoadmap] = useState(null);
+  const [regeneratingRoadmap, setRegeneratingRoadmap] = useState(false);
   const [flashcards, setFlashcards] = useState([]);
   const [bookmarks, setBookmarks] = useState([]);
 
@@ -197,6 +199,50 @@ const PracticeHub = () => {
       }
     } catch (error) {
       toast.error('Failed to remove bookmark');
+    }
+  };
+
+  const handleRegenerateRoadmap = async () => {
+    setRegeneratingRoadmap(true);
+    try {
+      const response = await axiosInstance.post('/practice/roadmap/regenerate');
+      if (response.data.success) {
+        setRoadmap(response.data.roadmap);
+        toast.success('Roadmap successfully regenerated based on latest interview performance!');
+      }
+    } catch (error) {
+      console.error('Error regenerating roadmap:', error);
+      toast.error('Failed to regenerate roadmap');
+    } finally {
+      setRegeneratingRoadmap(false);
+    }
+  };
+
+  const handleToggleRoadmapWeek = async (weekNumber) => {
+    try {
+      const response = await axiosInstance.patch(`/practice/roadmap/toggle-week/${weekNumber}`);
+      if (response.data.success) {
+        setRoadmap(response.data.roadmap);
+        toast.info(response.data.message || `Week ${weekNumber} status updated`);
+      }
+    } catch (error) {
+      console.error('Error toggling week completion:', error);
+      toast.error('Failed to update week status');
+    }
+  };
+
+  const handleToggleRoadmapSubtask = async (weekNumber, concept) => {
+    try {
+      const response = await axiosInstance.patch('/practice/roadmap/toggle-subtask', {
+        weekNumber,
+        concept
+      });
+      if (response.data.success) {
+        setRoadmap(response.data.roadmap);
+      }
+    } catch (error) {
+      console.error('Error toggling concept subtask:', error);
+      toast.error('Failed to update subtask');
     }
   };
 
@@ -566,31 +612,208 @@ const PracticeHub = () => {
         {/* Tab 2: Personalized 4-Week Roadmap */}
         {activeTab === 'roadmap' && (
           <div>
-            <h4 className="h6 fw-bold text-dark mb-3">Your Tailored 4-Week Learning Plan</h4>
-            {roadmap?.weeks?.length > 0 ? (
-              <div className="row g-3">
-                {roadmap.weeks.map((w, idx) => (
-                  <div key={idx} className="col-md-6 col-lg-3">
-                    <div className="border rounded-3 p-3 bg-light bg-opacity-50 h-100 d-flex flex-column justify-content-between">
-                      <div>
-                        <span className="badge bg-primary bg-opacity-10 text-primary mb-2">Week {w.weekNumber}</span>
-                        <strong className="d-block text-dark mb-1">{w.topic}</strong>
-                        <span className="d-block text-muted small mb-2">Focus: {w.focusArea}</span>
-                        <p className="text-muted mb-0" style={{ fontSize: '0.74rem', lineHeight: '1.4' }}>{w.reason}</p>
-                      </div>
-                      <button
-                        onClick={() => handleStartCustomPractice('Technical', w.topic)}
-                        className="btn btn-sm btn-primary-purple text-white w-100 mt-3 py-1.5"
-                        style={{ fontSize: '0.74rem' }}
-                      >
-                        Start Week {w.weekNumber}
-                      </button>
+            {/* Roadmap Header & Controls */}
+            <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 pb-3 border-bottom">
+              <div>
+                <h4 className="h5 fw-bold text-dark mb-1 d-flex align-items-center gap-2">
+                  <FiLayers className="text-primary" /> Personalized 4-Week AI Study Roadmap
+                </h4>
+                <p className="text-muted small mb-0">
+                  Targeted study plan synthesized by AI after analyzing recurring weaknesses and accuracy in your past mock interviews.
+                </p>
+              </div>
+              <button
+                onClick={handleRegenerateRoadmap}
+                disabled={regeneratingRoadmap}
+                className="btn btn-outline-primary btn-sm d-flex align-items-center gap-2 px-3 py-2 rounded-3 shadow-sm bg-white"
+              >
+                <FiRefreshCw className={regeneratingRoadmap ? 'spin-icon' : ''} />
+                <span>{regeneratingRoadmap ? 'Analyzing Interviews & Updating...' : 'Regenerate Plan with AI'}</span>
+              </button>
+            </div>
+
+            {/* Overall Progress & Summary Banner */}
+            <div className="card border-0 bg-primary bg-opacity-10 rounded-4 p-4 mb-4 shadow-sm">
+              <div className="row g-3 align-items-center">
+                <div className="col-md-7">
+                  <div className="d-flex align-items-center gap-2 mb-2">
+                    <span className="badge bg-primary text-white px-2.5 py-1">Role: {roadmap?.targetRole || 'Software Engineer'}</span>
+                    <span className="text-muted small fw-semibold">
+                      {roadmap?.weeks?.filter(w => w.completed).length || 0} of 4 Weeks Completed
+                    </span>
+                  </div>
+                  <p className="text-dark small mb-3 fw-medium" style={{ lineHeight: '1.5' }}>
+                    {roadmap?.summary || 'Follow this progressive curriculum to eliminate weak spots in technical interviews.'}
+                  </p>
+                  <div>
+                    <div className="d-flex justify-content-between text-muted small fw-semibold mb-1">
+                      <span>Curriculum Completion</span>
+                      <strong className="text-primary">{roadmap?.overallProgress || 0}%</strong>
+                    </div>
+                    <div className="progress" style={{ height: '8px', borderRadius: '4px' }}>
+                      <div
+                        className="progress-bar bg-primary-purple"
+                        role="progressbar"
+                        style={{ width: `${roadmap?.overallProgress || 0}%`, transition: 'width 0.5s ease' }}
+                        aria-valuenow={roadmap?.overallProgress || 0}
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                      />
                     </div>
                   </div>
-                ))}
+                </div>
+
+                <div className="col-md-5 border-start-md ps-md-4">
+                  <div className="row g-2 text-center">
+                    <div className="col-6">
+                      <div className="p-2.5 bg-white rounded-3 shadow-xs border">
+                        <span className="text-muted small d-block mb-1" style={{ fontSize: '0.72rem' }}>EST. STUDY TIME</span>
+                        <strong className="h6 fw-bold text-dark mb-0">
+                          {roadmap?.weeks?.reduce((acc, w) => acc + (w.estimatedHours || 4), 0) || 16} Hours
+                        </strong>
+                      </div>
+                    </div>
+                    <div className="col-6">
+                      <div className="p-2.5 bg-white rounded-3 shadow-xs border">
+                        <span className="text-muted small d-block mb-1" style={{ fontSize: '0.72rem' }}>PRACTICE DRILLS</span>
+                        <strong className="h6 fw-bold text-dark mb-0">
+                          {roadmap?.weeks?.reduce((acc, w) => acc + (w.practiceQuestionsCount || 5), 0) || 20} Questions
+                        </strong>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 Weekly Timeline Cards */}
+            {roadmap?.weeks?.length > 0 ? (
+              <div className="row g-4">
+                {roadmap.weeks.map((w, idx) => {
+                  const isCompleted = Boolean(w.completed);
+                  const subtasks = w.keyConcepts || [];
+                  const completedSubtasks = w.subtasksCompleted || [];
+
+                  return (
+                    <div key={idx} className="col-md-6">
+                      <div
+                        className={`card h-100 border rounded-4 p-4 shadow-sm transition-all ${
+                          isCompleted ? 'bg-light bg-opacity-50 border-success' : 'bg-white border-light-subtle'
+                        }`}
+                        style={{ borderLeft: isCompleted ? '5px solid #198754' : '5px solid var(--primary-purple)' }}
+                      >
+                        {/* Week Card Header */}
+                        <div className="d-flex justify-content-between align-items-start mb-2">
+                          <div className="d-flex align-items-center gap-2">
+                            <span className={`badge ${isCompleted ? 'bg-success' : 'bg-primary-purple'} text-white px-2.5 py-1`}>
+                              Week {w.weekNumber}
+                            </span>
+                            {isCompleted ? (
+                              <span className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 d-flex align-items-center gap-1">
+                                <FiCheckCircle /> Completed
+                              </span>
+                            ) : (
+                              <span className="badge bg-warning bg-opacity-10 text-warning border border-warning border-opacity-25">
+                                In Progress
+                              </span>
+                            )}
+                          </div>
+                          <div className="d-flex align-items-center gap-2 text-muted small">
+                            <span className="badge bg-light border text-muted" style={{ fontSize: '0.72rem' }}>
+                              <FiClock className="me-1" /> {w.estimatedHours || 4}h
+                            </span>
+                            <span className="badge bg-light border text-muted" style={{ fontSize: '0.72rem' }}>
+                              <FiZap className="me-1 text-warning" /> {w.practiceQuestionsCount || 5} Qs
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Title & Topic */}
+                        <h5 className="fw-bold text-dark mb-1 mt-1">{w.title || `Week ${w.weekNumber}: ${w.topic}`}</h5>
+                        <div className="mb-3">
+                          <span className="badge bg-secondary bg-opacity-10 text-dark fw-semibold" style={{ fontSize: '0.75rem' }}>
+                            Core Skill: {w.topic}
+                          </span>
+                        </div>
+
+                        {/* Focus & AI Rationale */}
+                        <div className="p-2.5 bg-light rounded-3 mb-3" style={{ fontSize: '0.78rem' }}>
+                          <div className="mb-1">
+                            <strong className="text-dark">Focus Area: </strong>
+                            <span className="text-muted">{w.focusArea}</span>
+                          </div>
+                          <div>
+                            <strong className="text-primary">AI Rationale: </strong>
+                            <span className="text-muted">{w.reason}</span>
+                          </div>
+                        </div>
+
+                        {/* Key Concepts Checklist */}
+                        <div className="mb-4">
+                          <div className="d-flex justify-content-between align-items-center mb-2">
+                            <span className="text-uppercase text-muted fw-bold" style={{ fontSize: '0.68rem', letterSpacing: '0.5px' }}>
+                              Key Study Concepts ({completedSubtasks.length}/{subtasks.length})
+                            </span>
+                          </div>
+                          <div className="d-flex flex-column gap-1.5">
+                            {subtasks.map((concept, cIdx) => {
+                              const checked = completedSubtasks.includes(concept) || isCompleted;
+                              return (
+                                <div
+                                  key={cIdx}
+                                  onClick={() => handleToggleRoadmapSubtask(w.weekNumber, concept)}
+                                  className={`d-flex align-items-center gap-2 p-2 rounded-2 cursor-pointer transition-all ${
+                                    checked ? 'bg-success bg-opacity-10 text-success' : 'bg-light text-dark hover-bg-light'
+                                  }`}
+                                  style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                                >
+                                  {checked ? (
+                                    <FiCheckSquare className="text-success flex-shrink-0" />
+                                  ) : (
+                                    <FiSquare className="text-muted flex-shrink-0" />
+                                  )}
+                                  <span className={checked ? 'text-decoration-line-through text-muted' : 'fw-medium'}>
+                                    {concept}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="mt-auto pt-2 d-flex gap-2">
+                          <button
+                            onClick={() => handleStartCustomPractice('Technical', w.topic)}
+                            disabled={startingSession}
+                            className="btn btn-primary-purple text-white btn-sm flex-grow-1 py-2 d-flex align-items-center justify-content-center gap-2 shadow-xs"
+                            style={{ fontSize: '0.8rem' }}
+                          >
+                            <FiPlay style={{ fill: 'white' }} />
+                            <span>Start Week {w.weekNumber} Practice</span>
+                          </button>
+                          <button
+                            onClick={() => handleToggleRoadmapWeek(w.weekNumber)}
+                            className={`btn btn-sm px-3 py-2 border d-flex align-items-center justify-content-center gap-1.5 ${
+                              isCompleted ? 'btn-outline-secondary' : 'btn-outline-success bg-white'
+                            }`}
+                            style={{ fontSize: '0.8rem' }}
+                            title={isCompleted ? 'Mark as Incomplete' : 'Mark Week Complete'}
+                          >
+                            <FiCheckCircle className={isCompleted ? 'text-muted' : 'text-success'} />
+                            <span>{isCompleted ? 'Undo' : 'Complete'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
-              <div className="py-4 text-center text-muted small">Roadmap generating...</div>
+              <div className="py-5 text-center text-muted">
+                <div className="spinner-border text-primary mb-3" role="status"></div>
+                <p className="mb-0">Loading your personalized learning roadmap...</p>
+              </div>
             )}
           </div>
         )}

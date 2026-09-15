@@ -1,6 +1,7 @@
 const axios = require('axios');
 const questionGenerator = require('./ai/questionGenerator');
 const evaluator = require('./ai/evaluator');
+const resumeReviewer = require('./ai/resumeReviewer');
 const { parseGeminiJson } = require('../utils/parseGeminiJson');
 const { executeWithRetry } = require('../utils/geminiRetry');
 const { logAiEvent } = require('../utils/logger');
@@ -182,19 +183,90 @@ Return strictly a JSON array of 5 objects matching:
 /**
  * 7. Personalized Learning Roadmap Generation
  */
-const generateLearningRoadmap = async (user, weakTopics = []) => {
-  const prompt = `Create a 4-week personalized interview preparation roadmap for a candidate targeting the role "${user?.targetRole || 'Software Engineer'}".
-Weak areas identified: ${weakTopics.join(', ') || 'DBMS, System Design, React'}.
+const generateLearningRoadmap = async (user, weakTopics = [], interviewCount = 0) => {
+  const weakTopicsStr = weakTopics.length > 0 ? weakTopics.join(', ') : 'JavaScript Closures, React Hooks, SQL Joins, Node.js Authentication';
+  
+  const prompt = `You are a Principal Software Engineering Mentor and Technical Interview Coach.
+Generate a comprehensive, highly targeted 4-Week Personalized Interview Preparation Study Roadmap for a candidate targeting the role: "${user?.targetRole || 'Software Engineer'}".
+Completed mock interviews analyzed: ${interviewCount}.
+Identified priority weak technical areas from evaluations: ${weakTopicsStr}.
 
-Return strictly a JSON array of 4 objects with this schema:
-[
-  {
-    "weekNumber": 1,
-    "topic": "Topic Name",
-    "focusArea": "Key Focus Area",
-    "reason": "Why this topic is prioritized"
-  }
-]`;
+Structure a progressive 4-week curriculum covering the candidate's biggest improvement opportunities (e.g., Week 1: JavaScript Closures & Lexical Scope, Week 2: React Hooks & State Management, Week 3: SQL Joins & Query Optimization, Week 4: Node.js Authentication & Security Architecture).
+
+Return strictly a valid JSON object with the following schema:
+{
+  "summary": "2-3 sentences synthesizing candidate performance patterns, highlighting what to focus on first and expected outcome after 4 weeks.",
+  "weeks": [
+    {
+      "weekNumber": 1,
+      "title": "Week 1: Topic Name & Core Angle (e.g. Week 1: JavaScript Closures & Lexical Scope)",
+      "topic": "JavaScript Closures",
+      "focusArea": "Lexical Scope, Function Factories, Data Encapsulation, Memory Profiling",
+      "reason": "Detailed explanation of why this topic is prioritized based on interview analysis.",
+      "keyConcepts": [
+        "Lexical Environment & Scope Chain",
+        "Function Factories & Currying Patterns",
+        "Memory Leaks & Garbage Collection Pitfalls",
+        "Debouncing & Throttling Scratch Implementation"
+      ],
+      "estimatedHours": 4,
+      "practiceQuestionsCount": 5,
+      "completed": false,
+      "subtasksCompleted": []
+    },
+    {
+      "weekNumber": 2,
+      "title": "Week 2: React Hooks & Component Architecture",
+      "topic": "React Hooks",
+      "focusArea": "State Lifecycle, Custom Hooks, Dependency Arrays, Render Optimization",
+      "reason": "Reinforce frontend architecture and avoid common re-rendering pitfalls.",
+      "keyConcepts": [
+        "Hook Execution Order & Rules",
+        "useCallback vs useMemo Performance Benchmarks",
+        "Custom Reusable State Hooks",
+        "Context API vs State Management Libraries"
+      ],
+      "estimatedHours": 4,
+      "practiceQuestionsCount": 5,
+      "completed": false,
+      "subtasksCompleted": []
+    },
+    {
+      "weekNumber": 3,
+      "title": "Week 3: SQL Joins, Indexing & Database Internals",
+      "topic": "SQL Joins",
+      "focusArea": "Relational Modeling, Index Types, Transaction Isolation, Query Plans",
+      "reason": "Strengthen backend data modeling and query performance skills.",
+      "keyConcepts": [
+        "INNER, LEFT, RIGHT & FULL OUTER Joins",
+        "B-Tree Indexes & EXPLAIN Query Analysis",
+        "ACID Properties & Concurrency Control",
+        "Database Normalization (1NF to BCNF)"
+      ],
+      "estimatedHours": 5,
+      "practiceQuestionsCount": 5,
+      "completed": false,
+      "subtasksCompleted": []
+    },
+    {
+      "weekNumber": 4,
+      "title": "Week 4: Node.js Authentication & Security Architecture",
+      "topic": "Node.js Authentication",
+      "focusArea": "JWT Security, OAuth2 Flows, Password Hashing, Middleware Pipelines",
+      "reason": "Master production-grade backend security and authentication design.",
+      "keyConcepts": [
+        "JWT vs Session Token Trade-offs",
+        "Bcrypt Hashing with Salts & Pepper",
+        "CORS, Helmet & OWASP Top 10 Protections",
+        "Role-Based Access Control (RBAC) Implementation"
+      ],
+      "estimatedHours": 4,
+      "practiceQuestionsCount": 5,
+      "completed": false,
+      "subtasksCompleted": []
+    }
+  ]
+}`;
 
   return await executeWithRetry(
     (p) => rawGeminiRequest(p),
@@ -206,7 +278,17 @@ Return strictly a JSON array of 4 objects with this schema:
 /**
  * 8. Practice Answer Concept Explanation
  */
-const explainConcept = async (topic, question, userAnswer) => {
+const explainConcept = async (topicOrObj, questionParam, userAnswerParam) => {
+  let topic = topicOrObj;
+  let question = questionParam;
+  let userAnswer = userAnswerParam;
+
+  if (typeof topicOrObj === 'object' && topicOrObj !== null) {
+    topic = topicOrObj.topic;
+    question = topicOrObj.question;
+    userAnswer = topicOrObj.userAnswer;
+  }
+
   const prompt = `You are an expert interview coach evaluating a practice answer.
 Question: "${question}"
 Topic: "${topic}"
@@ -331,6 +413,19 @@ Instructions:
   );
 };
 
+/**
+ * 11. AI Resume Review (Better Wording, Missing Keywords, ATS Improvements, Stronger Project Descriptions)
+ */
+const reviewResume = async ({ rawText, resumeData, targetRole, targetCompany }) => {
+  return await resumeReviewer.reviewResumeWithAI({
+    rawText,
+    resumeData,
+    targetRole,
+    targetCompany,
+    rawGeminiRequest
+  });
+};
+
 module.exports = {
   checkHealth,
   parseResume,
@@ -346,5 +441,7 @@ module.exports = {
   explainConcept,
   evaluatePracticeAnswer: explainConcept, // Alias
   evaluateVoiceAnswer,
-  compileVoiceReport
+  compileVoiceReport,
+  reviewResume,
+  reviewResumeWithAI: reviewResume
 };

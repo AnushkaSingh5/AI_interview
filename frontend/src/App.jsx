@@ -25,6 +25,7 @@ import InterviewHistory from './pages/InterviewHistory';
 import NotFound from './pages/NotFound';
 import ResumeUpload from './pages/ResumeUpload';
 import ResumePreview from './pages/ResumePreview';
+import ResumeReview from './pages/ResumeReview';
 import ExtractedDataEditor from './pages/ExtractedDataEditor';
 import InterviewCreate from './pages/InterviewCreate';
 import InterviewQuestionsReview from './pages/InterviewQuestionsReview';
@@ -44,6 +45,7 @@ import CodingReportView from './pages/CodingReportView';
 import SystemDesignCreate from './pages/SystemDesignCreate';
 import SystemDesignSession from './pages/SystemDesignSession';
 import SystemDesignReport from './pages/SystemDesignReport';
+import Leaderboard from './pages/Leaderboard';
 
 function App() {
   return (
@@ -89,11 +91,13 @@ function App() {
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/mock-interviews" element={<MockInterviews />} />
+              <Route path="/leaderboard" element={<Leaderboard />} />
               <Route path="/performance" element={<PerformanceDashboard />} />
               <Route path="/interviews/history" element={<InterviewHistory />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/resume/upload" element={<ResumeUpload />} />
               <Route path="/resume/preview" element={<ResumePreview />} />
+              <Route path="/resume/review" element={<ResumeReview />} />
               <Route path="/resume/data" element={<ExtractedDataEditor />} />
               <Route path="/interview/create" element={<InterviewCreate />} />
               <Route path="/interview/:id/questions" element={<InterviewQuestionsReview />} />

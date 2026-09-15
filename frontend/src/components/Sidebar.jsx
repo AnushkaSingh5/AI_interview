@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FiSliders, FiMic, FiCheckSquare, FiActivity, FiUser, FiFile, FiSettings, FiLogOut, FiCpu, FiCode, FiLayers } from 'react-icons/fi';
+import { FiSliders, FiMic, FiCheckSquare, FiActivity, FiUser, FiFile, FiFileText, FiSettings, FiLogOut, FiCpu, FiCode, FiLayers, FiAward } from 'react-icons/fi';
 import axiosInstance from '../api/axiosInstance';
 import { toast } from 'react-toastify';
 
@@ -71,6 +71,12 @@ const Sidebar = () => {
             </NavLink>
           </li>
           <li>
+            <NavLink to="/leaderboard" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
+              <FiAward />
+              <span>Leaderboard & XP</span>
+            </NavLink>
+          </li>
+          <li>
             <NavLink to="/performance" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiActivity />
               <span>My Performance</span>
@@ -79,8 +85,14 @@ const Sidebar = () => {
         </ul>
 
         {/* 2. Profile Section */}
-        <div className="sidebar-menu-section-header">Profile</div>
+        <div className="sidebar-menu-section-header">Profile & Tools</div>
         <ul className="sidebar-menu">
+          <li>
+            <NavLink to="/resume/review" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
+              <FiFileText />
+              <span>AI Resume Review</span>
+            </NavLink>
+          </li>
           <li>
             <NavLink to="/profile" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiUser />
@@ -88,10 +100,10 @@ const Sidebar = () => {
             </NavLink>
           </li>
           <li>
-            <a href="#documents" onClick={(e) => handleLockedItem(e, 'Documents')} className="sidebar-item-link">
+            <NavLink to="/resume/preview" className={({ isActive }) => isActive ? 'sidebar-item-link active' : 'sidebar-item-link'}>
               <FiFile />
-              <span>Documents</span>
-            </a>
+              <span>Resume Manager</span>
+            </NavLink>
           </li>
         </ul>
 

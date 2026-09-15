@@ -535,32 +535,43 @@ const Profile = () => {
                   </div>
                 </div>
 
-                <div className="d-flex gap-2 my-3">
-                  <a 
-                    href={resumeMeta.fileUrl} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="btn btn-sm btn-white-custom flex-grow-1 py-1.5 px-2 d-flex align-items-center justify-content-center gap-1.5"
+                <div className="d-flex flex-column gap-2 my-3">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/resume/review')}
+                    className="btn btn-sm btn-primary-purple w-100 py-1.5 px-2 d-flex align-items-center justify-content-center gap-1.5 text-white shadow-sm"
                     style={{ fontSize: '0.74rem' }}
                   >
-                    View
-                  </a>
-                  <a 
-                    href={resumeMeta.fileUrl} 
-                    download={resumeMeta.fileName}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn btn-sm btn-white-custom flex-grow-1 py-1.5 px-2 d-flex align-items-center justify-content-center gap-1.5"
-                    style={{ fontSize: '0.74rem' }}
-                  >
-                    <FiDownload /> Download
-                  </a>
-                  <button 
-                    onClick={handleDeleteResume}
-                    className="btn btn-sm btn-outline-danger py-1.5 px-2.5 d-flex align-items-center justify-content-center"
-                  >
-                    <FiTrash2 />
+                    <FiCheckCircle /> AI Resume Review & ATS
                   </button>
+
+                  <div className="d-flex gap-2">
+                    <a 
+                      href={resumeMeta.fileUrl} 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="btn btn-sm btn-white-custom flex-grow-1 py-1.5 px-2 d-flex align-items-center justify-content-center gap-1.5"
+                      style={{ fontSize: '0.74rem' }}
+                    >
+                      View
+                    </a>
+                    <a 
+                      href={resumeMeta.fileUrl} 
+                      download={resumeMeta.fileName}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-sm btn-white-custom flex-grow-1 py-1.5 px-2 d-flex align-items-center justify-content-center gap-1.5"
+                      style={{ fontSize: '0.74rem' }}
+                    >
+                      <FiDownload /> Download
+                    </a>
+                    <button 
+                      onClick={handleDeleteResume}
+                      className="btn btn-sm btn-outline-danger py-1.5 px-2.5 d-flex align-items-center justify-content-center"
+                    >
+                      <FiTrash2 />
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (

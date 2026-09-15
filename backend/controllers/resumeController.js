@@ -5,6 +5,8 @@ const { extractText, parseStructuredData } = require('../utils/parser');
 const User = require('../models/User');
 const Resume = require('../models/Resume');
 const ResumeData = require('../models/ResumeData');
+const ResumeReview = require('../models/ResumeReview');
+const aiService = require('../services/aiService');
 const { calculateCompletionScore } = require('./profileController');
 
 // Helper to stream upload file buffer to Cloudinary
@@ -385,3 +387,318 @@ exports.previewResume = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Generate comprehensive AI Resume Review (Better Wording, Missing Keywords, ATS, Projects)
+// @route   POST /api/resume/review
+// @access  Private
+exports.generateResumeReview = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    let resume = null;
+    if (user.resumeId) {
+      resume = await Resume.findById(user.resumeId);
+    }
+
+    const resumeData = await ResumeData.findOne({ user: user._id });
+    if (!resume && !resumeData) {
+      return res.status(400).json({
+        success: false,
+        message: 'No resume or structured profile data found. Please upload a resume first.'
+      });
+    }
+
+    const targetRole = req.body.targetRole || user.targetRole || 'Software Engineer';
+    const targetCompany = req.body.targetCompany || 'General Tech';
+
+    console.log(`[Resume Review Controller] Initiating AI review for user ${user._id} (Role: ${targetRole}, Company: ${targetCompany})...`);
+
+    const rawText = resume?.extractedText || '';
+    const reviewResult = await aiService.reviewResume({
+      rawText,
+      resumeData,
+      targetRole,
+      targetCompany
+    });
+
+    // Save review snapshot in MongoDB
+    const review = await ResumeReview.create({
+      user: user._id,
+      resume: resume?._id,
+      targetRole: reviewResult.targetRole || targetRole,
+      targetCompany: reviewResult.targetCompany || targetCompany,
+      overallScore: reviewResult.overallScore || 75,
+      atsScore: reviewResult.atsScore || 75,
+      wordingScore: reviewResult.wordingScore || 70,
+      skillsScore: reviewResult.skillsScore || 75,
+      projectScore: reviewResult.projectScore || 70,
+      readabilityScore: reviewResult.readabilityScore || 80,
+      executiveSummary: reviewResult.executiveSummary || '',
+      hiringVerdict: reviewResult.hiringVerdict || 'Good Foundation - Needs Targeted Polish',
+      topQuickWins: reviewResult.topQuickWins || [],
+      atsAnalysis: reviewResult.atsAnalysis || {},
+      keywordsAnalysis: reviewResult.keywordsAnalysis || {},
+      wordingSuggestions: reviewResult.wordingSuggestions || [],
+      projectEnhancements: reviewResult.projectEnhancements || [],
+      analysisEngine: reviewResult.analysisEngine || 'Gemini AI'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'AI Resume Review completed successfully',
+      review
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get user's latest AI Resume Review
+// @route   GET /api/resume/review/latest
+// @access  Private
+exports.getLatestResumeReview = async (req, res, next) => {
+  try {
+    const review = await ResumeReview.findOne({ user: req.user._id }).sort({ createdAt: -1 });
+    res.status(200).json({
+      success: true,
+      review: review || null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get user's AI Resume Review history
+// @route   GET /api/resume/review/history
+// @access  Private
+exports.getResumeReviewHistory = async (req, res, next) => {
+  try {
+    const reviews = await ResumeReview.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(10);
+    res.status(200).json({
+      success: true,
+      count: reviews.length,
+      reviews
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Quick upload resume and immediately run AI Review in one step
+// @route   POST /api/resume/review/quick-upload
+// @access  Private
+exports.quickUploadAndReview = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'Please upload a PDF or DOCX file' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Delete existing resume file if any
+    if (user.resumeId) {
+      const oldResume = await Resume.findById(user.resumeId);
+      if (oldResume) {
+        const isCloudy = oldResume.cloudinaryId && !oldResume.cloudinaryId.startsWith('178');
+        await deleteUploadedFile(oldResume.cloudinaryId, isCloudy);
+        await ResumeData.deleteOne({ resume: oldResume._id });
+        await Resume.deleteOne({ _id: oldResume._id });
+      }
+    }
+
+    let fileUrl = '';
+    let cloudinaryId = '';
+    let isCloudy = false;
+
+    if (isCloudinaryConfigured) {
+      const uploadResult = await uploadStreamToCloudinary(req.file.buffer, req.file.originalname);
+      fileUrl = uploadResult.secure_url;
+      cloudinaryId = uploadResult.public_id;
+      isCloudy = true;
+    } else {
+      const localResult = saveFileLocally(req.file.buffer, req.file.originalname);
+      fileUrl = localResult.secure_url;
+      cloudinaryId = localResult.public_id;
+    }
+
+    const startParseTime = Date.now();
+    const extractedText = await extractText(req.file.buffer, req.file.mimetype);
+    const structuredData = await parseStructuredData(extractedText);
+    const endParseTime = Date.now();
+    const processingTimeSec = parseFloat(((endParseTime - startParseTime) / 1000).toFixed(1));
+
+    const resume = await Resume.create({
+      user: user._id,
+      fileName: req.file.originalname,
+      fileUrl: fileUrl,
+      cloudinaryId: cloudinaryId,
+      fileType: path.extname(req.file.originalname).substring(1).toLowerCase(),
+      extractedText: extractedText,
+      parserUsed: 'Gemini AI',
+      parsingStatus: 'Success',
+      processingTimeSec
+    });
+
+    let resumeData = await ResumeData.findOne({ user: user._id });
+    if (resumeData) {
+      Object.assign(resumeData, {
+        resume: resume._id,
+        ...structuredData
+      });
+      await resumeData.save();
+    } else {
+      resumeData = await ResumeData.create({
+        user: user._id,
+        resume: resume._id,
+        ...structuredData
+      });
+    }
+
+    resume.extractedData = resumeData._id;
+    await resume.save();
+
+    user.resumeId = resume._id;
+    const score = calculateCompletionScore(user, resumeData);
+    user.profileCompletion = score;
+    user.isProfileCompleted = score === 100;
+    await user.save();
+
+    // Now run AI Review directly
+    const targetRole = req.body.targetRole || user.targetRole || 'Software Engineer';
+    const targetCompany = req.body.targetCompany || 'General Tech';
+
+    const reviewResult = await aiService.reviewResume({
+      rawText: extractedText,
+      resumeData,
+      targetRole,
+      targetCompany
+    });
+
+    const review = await ResumeReview.create({
+      user: user._id,
+      resume: resume._id,
+      targetRole: reviewResult.targetRole || targetRole,
+      targetCompany: reviewResult.targetCompany || targetCompany,
+      overallScore: reviewResult.overallScore || 75,
+      atsScore: reviewResult.atsScore || 75,
+      wordingScore: reviewResult.wordingScore || 70,
+      skillsScore: reviewResult.skillsScore || 75,
+      projectScore: reviewResult.projectScore || 70,
+      readabilityScore: reviewResult.readabilityScore || 80,
+      executiveSummary: reviewResult.executiveSummary || '',
+      hiringVerdict: reviewResult.hiringVerdict || 'Good Foundation - Needs Targeted Polish',
+      topQuickWins: reviewResult.topQuickWins || [],
+      atsAnalysis: reviewResult.atsAnalysis || {},
+      keywordsAnalysis: reviewResult.keywordsAnalysis || {},
+      wordingSuggestions: reviewResult.wordingSuggestions || [],
+      projectEnhancements: reviewResult.projectEnhancements || [],
+      analysisEngine: reviewResult.analysisEngine || 'Gemini AI'
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Resume uploaded and analyzed with AI successfully',
+      resume,
+      resumeData,
+      review
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    1-Click sync missing keywords to ResumeData and User profile
+// @route   POST /api/resume/review/sync-keywords
+// @access  Private
+exports.syncMissingKeywords = async (req, res, next) => {
+  try {
+    const { keywords } = req.body;
+    if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
+      return res.status(400).json({ success: false, message: 'Please provide an array of keywords to sync' });
+    }
+
+    let resumeData = await ResumeData.findOne({ user: req.user._id });
+    if (!resumeData) {
+      resumeData = new ResumeData({ user: req.user._id, technicalSkills: [] });
+    }
+
+    const currentSkills = resumeData.technicalSkills || [];
+    const newSkills = [...currentSkills];
+
+    keywords.forEach(kw => {
+      const cleanKw = String(kw).trim();
+      if (cleanKw && !newSkills.some(s => s.toLowerCase() === cleanKw.toLowerCase())) {
+        newSkills.push(cleanKw);
+      }
+    });
+
+    resumeData.technicalSkills = newSkills;
+    await resumeData.save();
+
+    const user = await User.findById(req.user._id);
+    if (user) {
+      user.skills = newSkills;
+      const score = calculateCompletionScore(user, resumeData);
+      user.profileCompletion = score;
+      user.isProfileCompleted = score === 100;
+      await user.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Successfully added ${keywords.length} keywords to your technical profile`,
+      technicalSkills: newSkills,
+      profileCompletion: user?.profileCompletion || 100
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    1-Click apply enhanced project description to ResumeData
+// @route   POST /api/resume/review/apply-project
+// @access  Private
+exports.applyProjectEnhancement = async (req, res, next) => {
+  try {
+    const { projectIndex, title, enhancedDescription, technologies } = req.body;
+
+    let resumeData = await ResumeData.findOne({ user: req.user._id });
+    if (!resumeData) {
+      return res.status(404).json({ success: false, message: 'Resume structured data not found' });
+    }
+
+    if (!resumeData.projects || resumeData.projects.length === 0) {
+      // Add as first project
+      resumeData.projects = [{
+        title: title || 'Full Stack Project',
+        description: enhancedDescription,
+        technologies: technologies || []
+      }];
+    } else {
+      const idx = (projectIndex !== undefined && projectIndex >= 0 && projectIndex < resumeData.projects.length) ? projectIndex : 0;
+      if (title) resumeData.projects[idx].title = title;
+      if (enhancedDescription) resumeData.projects[idx].description = enhancedDescription;
+      if (technologies && technologies.length > 0) {
+        const mergedTech = Array.from(new Set([...(resumeData.projects[idx].technologies || []), ...technologies]));
+        resumeData.projects[idx].technologies = mergedTech;
+      }
+    }
+
+    await resumeData.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Project description updated with AI enhancement successfully',
+      projects: resumeData.projects
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+

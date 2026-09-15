@@ -119,11 +119,18 @@ const ResumePreview = () => {
             </div>
 
             <div className="d-flex flex-column gap-2">
+              <Link 
+                to="/resume/review" 
+                className="btn btn-primary-purple w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+              >
+                <FiCheckCircle /> AI Resume Review & ATS
+              </Link>
+
               <a 
                 href={resume.fileUrl} 
                 target="_blank" 
                 rel="noreferrer" 
-                className="btn btn-primary-purple w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                className="btn btn-white-custom border w-100 py-2 d-flex align-items-center justify-content-center gap-2"
               >
                 <FiDownload /> Download Resume
               </a>
