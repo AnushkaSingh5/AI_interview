@@ -1,21 +1,45 @@
-const { PDFParse } = require('pdf-parse');
-const mammoth = require('mammoth');
 const axios = require('axios');
 const aiService = require('../services/aiService');
 
 // Extract raw text from memory buffer based on MIME type
 const extractText = async (buffer, mimeType) => {
   if (mimeType === 'application/pdf') {
-    const parser = new PDFParse({ data: buffer });
-    await parser.load();
-    const data = await parser.getText();
-    return data.text;
+    try {
+      const pdf = require('pdf-parse');
+      if (typeof pdf === 'function') {
+        const data = await pdf(buffer);
+        return data.text;
+      }
+      if (pdf.PDFParse) {
+        const parser = new pdf.PDFParse({ data: buffer });
+        await parser.load();
+        const data = await parser.getText();
+        return data.text;
+      }
+      // Direct instance or default export
+      const ParserClass = pdf.default || pdf;
+      const parser = new ParserClass({ data: buffer });
+      if (parser.load && parser.getText) {
+        await parser.load();
+        const data = await parser.getText();
+        return data.text;
+      }
+    } catch (err) {
+      console.warn('[Parser Warning] PDF library extraction error:', err.message);
+      return buffer.toString('utf-8');
+    }
   } else if (
     mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
     mimeType === 'application/msword'
   ) {
-    const data = await mammoth.extractRawText({ buffer });
-    return data.value;
+    try {
+      const mammoth = require('mammoth');
+      const data = await mammoth.extractRawText({ buffer });
+      return data.value;
+    } catch (err) {
+      console.warn('[Parser Warning] Word document extraction error:', err.message);
+      return buffer.toString('utf-8');
+    }
   } else {
     throw new Error('Unsupported document format for text extraction');
   }
