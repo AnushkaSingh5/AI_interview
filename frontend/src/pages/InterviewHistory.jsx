@@ -174,7 +174,10 @@ const InterviewHistory = () => {
 
   const handleDownloadPdf = (interviewId) => {
     // Navigate to full HTML print endpoint
-    window.open(`http://localhost:5000/api/interviews/${interviewId}/report/pdf`, '_blank');
+    const rawApiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    let cleanApiUrl = rawApiUrl.trim().replace(/\/+$/, '');
+    if (!cleanApiUrl.endsWith('/api')) cleanApiUrl += '/api';
+    window.open(`${cleanApiUrl}/interviews/${interviewId}/report/pdf`, '_blank');
   };
 
   return (

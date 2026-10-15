@@ -20,13 +20,15 @@ const getUserResponse = (user) => {
 const sendTokenResponse = (user, statusCode, res, message) => {
   const token = user.generateToken();
 
+  const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
   const options = {
     expires: new Date(
       Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days matching default JWT expiry
     ),
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
+    secure: isProduction,
+    sameSite: isProduction ? 'none' : 'lax'
   };
 
   res
@@ -105,9 +107,13 @@ exports.login = async (req, res, next) => {
 // @access  Private
 exports.logout = async (req, res, next) => {
   try {
+    const isProduction = process.env.NODE_ENV === 'production' || !!process.env.VERCEL;
+
     res.cookie('token', 'none', {
       expires: new Date(Date.now() + 10 * 1000),
-      httpOnly: true
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: isProduction ? 'none' : 'lax'
     });
 
     res.status(200).json({

@@ -33,7 +33,8 @@ const uploadStreamToCloudinary = (fileBuffer, originalName) => {
 
 // Helper to save buffer to local uploads folder (fallback)
 const saveFileLocally = (fileBuffer, originalName) => {
-  const uploadDir = path.join(__dirname, '../uploads');
+  const isVercel = !!process.env.VERCEL;
+  const uploadDir = isVercel ? path.join('/tmp', 'uploads') : path.join(__dirname, '../uploads');
   if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
   }
