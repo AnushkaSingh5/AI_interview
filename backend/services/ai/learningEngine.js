@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { parseGeminiJson } = require('../../utils/jsonParser');
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
 
 const executeWithRetry = async (fn, retries = 3, delay = 2000) => {
   let attempt = 1;

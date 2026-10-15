@@ -6,7 +6,7 @@ const { getProblemForInterview, CURATED_PROBLEMS } = require('../codingProblemSe
 const { getScenarioForInterview, CURATED_SCENARIOS } = require('../systemDesignScenarioService');
 const { getCompanyStyle } = require('../../config/companyStyles');
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
 
 // Fail-safe rich fallback template questions generator
 const getFallbackQuestions = (session) => {

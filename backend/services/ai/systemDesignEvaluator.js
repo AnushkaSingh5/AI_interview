@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { parseGeminiJson } = require('../../utils/parseGeminiJson');
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
 
 /**
  * Deep Gemini AI Evaluation of System Design Submissions across 6 core pillars
@@ -17,8 +17,8 @@ async function evaluateSystemDesign({
   diagramConnections = [],
   designDoc = {}
 }) {
-  const currentApiKey = process.env.GEMINI_API_KEY || apiKey;
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const currentApiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY || apiKey;
+  const model = process.env.GEMINI_MODEL || process.env.GEMINT_MODEL || 'gemini-2.5-flash';
   const url = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent?key=" + currentApiKey;
 
   const diagramSummary = {

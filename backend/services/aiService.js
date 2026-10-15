@@ -6,25 +6,31 @@ const { parseGeminiJson } = require('../utils/parseGeminiJson');
 const { executeWithRetry } = require('../utils/geminiRetry');
 const { logAiEvent } = require('../utils/logger');
 
-// Ensure GEMINI_API_KEY is present on load
-const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  console.error('\n========================================================================');
-  console.error('CRITICAL CONFIGURATION ERROR: GEMINI_API_KEY is missing in backend/.env!');
-  console.error('The server cannot start without a valid Gemini API key.');
-  console.error('========================================================================\n');
-  throw new Error('GEMINI_API_KEY is not defined in environment variables.');
-}
+// Helper to safely retrieve Gemini API key (including common typo fallbacks)
+const getApiKey = () =>
+  process.env.GEMINI_API_KEY ||
+  process.env.GEMINI_APT_KEY ||
+  process.env.GEMINT_APT_KEY ||
+  '';
 
-const maskedKey = apiKey.length > 8 ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : '***';
-console.log(`[AI Service] Initialize: API Key successfully loaded (${maskedKey})`);
+const apiKey = getApiKey();
+if (!apiKey) {
+  console.warn('\n[AI Service Warning]: GEMINI_API_KEY is not configured in environment variables.');
+} else {
+  const maskedKey = apiKey.length > 8 ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` : '***';
+  console.log(`[AI Service] Initialize: API Key successfully loaded (${maskedKey})`);
+}
 
 /**
  * Core raw Gemini HTTP request function
  */
 const rawGeminiRequest = async (prompt, options = {}) => {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const currentKey = getApiKey();
+  if (!currentKey) {
+    throw new Error('GEMINI_API_KEY is not configured in environment variables.');
+  }
+  const model = process.env.GEMINI_MODEL || process.env.GEMINT_MODEL || 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
 
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -56,8 +62,9 @@ const rawGeminiRequest = async (prompt, options = {}) => {
  * Health Check API
  */
 const checkHealth = async () => {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const currentKey = getApiKey();
+  const model = process.env.GEMINI_MODEL || process.env.GEMINT_MODEL || 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
   const startTime = Date.now();
 
   try {

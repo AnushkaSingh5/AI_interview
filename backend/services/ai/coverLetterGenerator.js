@@ -1,14 +1,15 @@
 const axios = require('axios');
 const { parseGeminiJson } = require('../../utils/parseGeminiJson');
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
 
 /**
  * Raw Gemini caller with exponential backoff on 429 rate limit
  */
 const rawGeminiCall = async (prompt, timeoutMs = 45000, maxRetries = 2) => {
-  const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const model = process.env.GEMINI_MODEL || process.env.GEMINT_MODEL || 'gemini-2.5-flash';
+  const currentKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY || apiKey;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${currentKey}`;
 
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],

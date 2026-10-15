@@ -9,7 +9,7 @@ const { parseGeminiJson } = require('../utils/jsonParser');
 const axios = require('axios');
 const crypto = require('crypto');
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
 
 // Helper to sanitize and verify whether an answer is valid and non-empty
 const sanitizeAndCheckAnswer = (transcriptText, questionText) => {

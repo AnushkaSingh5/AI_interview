@@ -1,7 +1,7 @@
 const axios = require('axios');
 const { parseGeminiJson } = require('../../utils/parseGeminiJson');
 
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
 
 /**
  * Reviews candidate's code quality, time/space complexity, edge cases, and best practices using Gemini AI

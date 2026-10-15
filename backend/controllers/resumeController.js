@@ -123,7 +123,7 @@ exports.uploadResume = async (req, res, next) => {
     const endParseTime = Date.now();
     const processingTimeSec = parseFloat(((endParseTime - startParseTime) / 1000).toFixed(1));
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GEMINI_APT_KEY || process.env.GEMINT_APT_KEY;
     const parserUsed = apiKey ? 'Gemini AI' : 'Regex Heuristic';
     const parsingStatus = 'Success';
 
