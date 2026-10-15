@@ -28,19 +28,21 @@ const { apiLimiter } = require('./middleware/rateLimiter');
 const aiService = require('./services/aiService');
 const aiRoutes = require('./routes/aiRoutes');
 
-// Connect to Database asynchronously on boot
-connectDB()
-  .then(() => {
-    try {
-      const { resumePendingJobs } = require('./services/ai/aiQueueService');
-      resumePendingJobs();
-    } catch (e) {
-      console.warn('[AI Queue] resumePendingJobs warning:', e.message);
-    }
-  })
-  .catch((err) => {
-    console.warn('[Boot] MongoDB initial connection deferred to request-time:', err.message);
-  });
+// Connect to Database asynchronously on boot (local / container environments)
+if (!process.env.VERCEL) {
+  connectDB()
+    .then(() => {
+      try {
+        const { resumePendingJobs } = require('./services/ai/aiQueueService');
+        resumePendingJobs();
+      } catch (e) {
+        console.warn('[AI Queue] resumePendingJobs warning:', e.message);
+      }
+    })
+    .catch((err) => {
+      console.warn('[Boot] MongoDB initial connection deferred to request-time:', err.message);
+    });
+}
 
 const app = express();
 
