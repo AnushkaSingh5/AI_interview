@@ -108,8 +108,37 @@ app.use(express.urlencoded({ extended: true }));
 // Cookie Parser
 app.use(cookieParser());
 
-// Serverless DB Connection Guarantee Middleware (ensures DB is active before handling routes)
-app.use(async (req, res, next) => {
+// Root API Landing Check (Responds immediately, no DB blocking)
+app.get('/', (req, res) => {
+  const mongoose = require('mongoose');
+  const states = ['Disconnected', 'Connected', 'Connecting', 'Disconnecting'];
+  res.status(200).json({
+    success: true,
+    name: 'InterviewAce AI Backend API',
+    status: 'online',
+    version: '1.0.0',
+    database: states[mongoose.connection?.readyState] || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Base Health Check Route (Responds immediately, reports DB status)
+app.get('/api/health', (req, res) => {
+  const mongoose = require('mongoose');
+  const states = ['Disconnected', 'Connected', 'Connecting', 'Disconnecting'];
+  res.status(200).json({
+    success: true,
+    message: 'InterviewAce AI Backend API is healthy and running',
+    database: states[mongoose.connection?.readyState] || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Rate Limiting
+app.use('/api', apiLimiter);
+
+// Serverless DB Connection Guarantee Middleware for API Routes
+app.use('/api', async (req, res, next) => {
   try {
     await connectDB();
     next();
@@ -117,29 +146,9 @@ app.use(async (req, res, next) => {
     console.error('[DB Middleware Error]:', err.message);
     res.status(503).json({
       success: false,
-      message: 'Database connection temporarily unavailable. Please retry momentarily.'
+      message: 'Database connection temporarily unavailable. Please ensure MongoDB Atlas Network Access allows 0.0.0.0/0.'
     });
   }
-});
-
-// Root API Landing Check
-app.get('/', (req, res) => {
-  res.status(200).json({
-    success: true,
-    name: 'InterviewAce AI Backend API',
-    status: 'online',
-    version: '1.0.0',
-    documentation: '/api/health',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Base Health Check Route
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'InterviewAce AI Backend API is healthy and running'
-  });
 });
 
 // Mount Routes
