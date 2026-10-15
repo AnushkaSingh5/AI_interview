@@ -70,35 +70,37 @@ const allowedOrigins = [
   .filter(Boolean)
   .map(url => url.trim().replace(/\/+$/, ''));
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
-      if (!origin) return callback(null, true);
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. mobile apps, curl, server-to-server)
+    if (!origin) return callback(null, true);
 
-      const normalized = origin.trim().replace(/\/+$/, '');
-      try {
-        const hostname = new URL(origin).hostname;
-        if (
-          allowedOrigins.includes(normalized) ||
-          hostname.endsWith('.vercel.app') ||
-          hostname === 'localhost' ||
-          hostname === '127.0.0.1'
-        ) {
-          return callback(null, true);
-        }
-      } catch (e) {
-        if (allowedOrigins.includes(normalized)) {
-          return callback(null, true);
-        }
+    const normalized = origin.trim().replace(/\/+$/, '');
+    try {
+      const hostname = new URL(origin).hostname;
+      if (
+        allowedOrigins.includes(normalized) ||
+        hostname.endsWith('.vercel.app') ||
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1'
+      ) {
+        return callback(null, true);
       }
-      return callback(null, true);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
-  })
-);
+    } catch (e) {
+      if (allowedOrigins.includes(normalized)) {
+        return callback(null, true);
+      }
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 // Rate Limiting
 app.use('/api', apiLimiter);
@@ -136,11 +138,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Rate Limiting
-app.use('/api', apiLimiter);
-
 // Serverless DB Connection Guarantee Middleware for API Routes
 app.use('/api', async (req, res, next) => {
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
   try {
     await connectDB();
     next();

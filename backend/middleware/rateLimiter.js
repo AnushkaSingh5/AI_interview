@@ -4,7 +4,8 @@ const rateLimit = require('express-rate-limit');
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'development' ? 50000 : 2000, // Generous limit for high-frequency interactive features
-  skip: (req) => process.env.NODE_ENV === 'development' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1',
+  skip: (req) => req.method === 'OPTIONS' || process.env.NODE_ENV === 'development' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1',
+  validate: { trustProxy: false, xForwardedForHeader: false },
   message: {
     success: false,
     message: 'Too many requests from this IP, please try again after 15 minutes'
@@ -17,7 +18,8 @@ const apiLimiter = rateLimit({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: process.env.NODE_ENV === 'development' ? 1000 : 60, // Limit authentication requests per window
-  skip: (req) => process.env.NODE_ENV === 'development' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1',
+  skip: (req) => req.method === 'OPTIONS' || process.env.NODE_ENV === 'development' || req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1',
+  validate: { trustProxy: false, xForwardedForHeader: false },
   message: {
     success: false,
     message: 'Too many authentication attempts, please try again after 15 minutes'
